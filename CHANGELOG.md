@@ -2,6 +2,12 @@
 
 ## 0.1.0
 
+### Discovery
+
+- New `azw skus` verb for answering "what SKU names exist that I could try?" without reading Microsoft's size docs end-to-end. One ARM call to the subscription-level skus catalog returns every VM SKU, deduped by name, with family / vCPU / RAM / regions columns. Filters: `--eu` / `--us` / `--asia` / `--geography <group>` (client-side on `locations[]`), `--family <letter>` (e.g. `B`, `D`, `E`).
+- `azw skus --region <name>` fast path hits the location-scoped skus endpoint and returns in ~2–3 s instead of the ~25–40 s full-catalog scan. Rejects combining `--region` with geography flags (exit 3) rather than silently ignoring them.
+- New `Spinner` class in `core/progress.ts` for indeterminate ARM calls — braille frames with live elapsed and ETA. Displays "⠋ Fetching SKU catalog · 3.2s / ~35s" and flips to "(est. ~35s)" if the real call overruns. Used by `skus` during the catalog fetch.
+
 ### Performance
 
 - `scanRegions` talks ARM REST directly via `fetch` instead of spawning `az` per region. One `az account get-access-token` up-front, then parallel REST calls. Typical global scan drops from ~250 s to ~13 s — `az` serialises concurrent invocations on the MSAL token-cache file lock on Windows, which turned "concurrency 8" into effectively concurrency 1.
@@ -23,6 +29,9 @@
 ### Fixes
 
 - `--json` on `regions` / `quota` / `pick` now actually emits JSON. Commander was routing the flag to the parent program because it was declared on both levels.
+- `pick <sku>` now exits with code 1 when every region scan was ineligible (previously exited 0 with an empty string, which silently broke `$(azw pick ...)` captures in shell pipelines).
+- `quota <sku>` filters to regions where the SKU is actually offered by default, so the table stops showing "0/10 free" for SKUs that aren't available there anyway. `--all` restores the full view.
+- Splash screen now mentions `Requires: az login` up-front, so the first-run "not authenticated" error is traceable to its cause without reading the help text.
 
 ## 0.0.1
 

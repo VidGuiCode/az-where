@@ -4,7 +4,7 @@
 
 **Where in Azure can I actually deploy this?**
 
-[![npm](https://img.shields.io/badge/npm-v0.0.1-cb3837?logo=npm&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
+[![Release](https://img.shields.io/badge/release-v0.1.0-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6?logo=typescript&logoColor=white)](tsconfig.json)
@@ -51,13 +51,44 @@ One call prints a table with the three checks combined into a single verdict per
 
 ## Install
 
+**From a pinned release tarball (recommended):**
+
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.0.1/az-where-0.0.1.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.1.0/az-where-0.1.0.tgz
+```
+
+**Always-latest via the GitHub release API** (resolves to the newest published `.tgz`):
+
+```bash
+npm install -g "$(gh release view --repo VidGuiCode/az-where --json assets --jq '.assets[] | select(.name | endswith(".tgz")) | .url')"
+```
+
+**From source** (clone + build):
+
+```bash
+git clone https://github.com/VidGuiCode/az-where.git
+cd az-where
+npm install
+npm run build
+npm install -g .
+```
+
+**Uninstall:**
+
+```bash
+npm uninstall -g az-where
 ```
 
 Requires **Node 20+** and the **[Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)** installed and logged in (`az login`). `az-where` never stores credentials — it uses whatever `az account show` already resolves to.
 
 Two binaries are installed: `az-where` (long) and `azw` (short). They are the same tool. The rest of this README uses `azw`.
+
+**Verify the install:**
+
+```bash
+azw --version          # → 0.1.0
+azw where              # shows your current subscription / user
+```
 
 ## Quick start
 
