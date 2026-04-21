@@ -36,9 +36,15 @@ describe("CLI smoke tests", () => {
 
   it("lists all top-level commands", () => {
     const output = run(["--help"]);
-    for (const cmd of ["where", "regions", "pick", "quota", "geos", "skus"]) {
+    for (const cmd of ["where", "regions", "pick", "quota", "geos", "skus", "update"]) {
       expect(output).toContain(cmd);
     }
+  });
+
+  it("update command has a help screen", () => {
+    const output = run(["update", "--help"]);
+    expect(output).toContain("update");
+    expect(output).toContain("--json");
   });
 
   it("skus command has a help screen with filters", () => {

@@ -4,7 +4,7 @@
 
 **Where in Azure can I actually deploy this?**
 
-[![Release](https://img.shields.io/badge/release-v0.1.0-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
+[![Release](https://img.shields.io/badge/release-v0.2.0-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6?logo=typescript&logoColor=white)](tsconfig.json)
@@ -54,7 +54,7 @@ One call prints a table with the three checks combined into a single verdict per
 **From a pinned release tarball (recommended):**
 
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.1.0/az-where-0.1.0.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.2.0/az-where-0.2.0.tgz
 ```
 
 **Always-latest via the GitHub release API** (resolves to the newest published `.tgz`):
@@ -94,9 +94,35 @@ Two binaries are installed: `az-where` (long) and `azw` (short). They are the sa
 **Verify the install:**
 
 ```bash
-azw --version          # → 0.1.0
+azw --version          # → 0.2.0
 azw where              # shows your current subscription / user
 ```
+
+### Stay up to date
+
+`azw` quietly checks GitHub once every 24 hours to see whether you're on the latest published release. If you're behind, a single dim line appears on stderr after your command finishes — stdout pipelines stay clean:
+
+```
+A new az-where is available: 0.3.0 (you're on 0.2.0). Run 'azw update' for install steps, or set AZ_WHERE_NO_UPDATE_CHECK=1 to silence this.
+```
+
+Ask for install commands tailored to the latest tag:
+
+```bash
+azw update             # human output with pinned + always-latest commands
+azw update --json      # same thing, machine-readable
+```
+
+**Turn the check off** in any of the following ways:
+
+| How | Scope |
+|---|---|
+| `--no-update-check` flag | This invocation only |
+| `AZ_WHERE_NO_UPDATE_CHECK=1` env var | Every future invocation |
+| `--json` / `--name` / `--compact` | Auto-suppressed (keeps machine output clean) |
+| `CI=true` / `NO_COLOR=1` | Auto-suppressed |
+
+The result is cached under `%LOCALAPPDATA%\az-where\version-check.json` on Windows and `$XDG_CACHE_HOME/az-where/` elsewhere. Fetch timeout is 1.5 s — offline? You won't know, and neither will `azw`.
 
 ## Quick start
 
@@ -147,6 +173,7 @@ Colours auto-disable when output is piped, when `--json` is used, or when `NO_CO
 | `--compact` | One-line JSON (saves tokens when piping to AI) |
 | `--name` | One region name per line (on `regions`/`pick`), no decoration |
 | `--no-interactive` | Fail instead of prompting (auto-detected in non-TTY) |
+| `--no-update-check` | Skip the once-per-day GitHub release check for this run |
 
 Environment:
 

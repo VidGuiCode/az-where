@@ -7,9 +7,11 @@ import { createPickCommand } from "./commands/pick.js";
 import { createQuotaCommand } from "./commands/quota.js";
 import { createGeosCommand } from "./commands/geos.js";
 import { createSkusCommand } from "./commands/skus.js";
+import { createUpdateCommand } from "./commands/update.js";
 import { configureHelp } from "./core/help.js";
 import { c, colorEnabled } from "./core/color.js";
 import { looksLikeSku, normalizeSku } from "./core/sku.js";
+import { maybePrintUpdateBanner } from "./core/updateCheck.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { version: string };
@@ -32,6 +34,14 @@ function splash(version: string): string {
     azw where                 Current Azure subscription / user
     azw geos                  Discover what --geography values your sub sees
     azw skus --eu --family B  Discover VM SKU names (family, vCPU, RAM)
+    azw update                Check for a newer release + install commands
+
+  ${colorEnabled() ? c.bold("Global flags:") : "Global flags:"}
+    --json                    Machine-readable JSON output (most verbs)
+    --compact                 One-line JSON (saves tokens when piping to AI)
+    --no-update-check         Skip the once-per-day GitHub release check
+    --no-interactive          Fail instead of prompting (auto on non-TTY)
+    (or set AZ_WHERE_NO_UPDATE_CHECK=1 to silence the update check everywhere)
 `;
 }
 
@@ -73,10 +83,27 @@ program.addCommand(createPickCommand());
 program.addCommand(createQuotaCommand());
 program.addCommand(createGeosCommand());
 program.addCommand(createSkusCommand());
+program.addCommand(createUpdateCommand(pkg.version));
 
 configureHelp(program);
 
 const verbs = new Set<string>(program.commands.map((cmd) => cmd.name()));
-const argv = rewritePositionalSku(process.argv, verbs);
+// `--no-update-check` is consumed directly via hasArg() in updateCheck.ts,
+// same pattern as --compact / --no-interactive. Strip it here so Commander
+// doesn't trip on "unknown option" when it appears on a subcommand.
+const argv = rewritePositionalSku(
+  process.argv.filter((a) => a !== "--no-update-check"),
+  verbs,
+);
 
-program.parseAsync(argv);
+// Run the command first, then fire the update banner on stderr. Ordering
+// matters: doing it post-parse means a slow network can't delay the user's
+// actual output, and routing to stderr keeps stdout pipelines clean.
+program
+  .parseAsync(argv)
+  .then(() => maybePrintUpdateBanner(pkg.version))
+  .catch(() => {
+    // parseAsync has already handled/exited on command errors; swallow any
+    // stray rejection so the banner path doesn't turn into an unhandled
+    // promise warning.
+  });

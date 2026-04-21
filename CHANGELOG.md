@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0
+
+### Features
+
+- **`azw update`** verb — checks GitHub Releases for the latest published version and prints install commands (pinned tarball, always-latest via `gh`, and a PowerShell-safe one-liner). `--json` returns the same data as a machine-readable payload. No self-install — the user copies the command, so privilege elevation and global npm bin management stay visible and explicit.
+- **Background version check** on every invocation. Hits `api.github.com/repos/VidGuiCode/az-where/releases/latest` with a 1.5 s timeout, caches the result for 24 h under `%LOCALAPPDATA%\az-where\version-check.json` (Windows) / `$XDG_CACHE_HOME/az-where/` (macOS/Linux). If the installed version is behind, a single dim line is written to **stderr** after the verb's output — stdout pipelines stay untouched.
+- **Opt-out matrix** for the banner, in order of specificity: `--no-update-check` (this run), `AZ_WHERE_NO_UPDATE_CHECK=1` (persistent), and auto-suppression under `--json` / `--name` / `--compact` / `CI=true` / `NO_COLOR=1`. The explicit `azw update` verb bypasses all suppression except the explicit opt-outs, so `azw update --json` always attempts the check — same pattern as `npm outdated` vs `update-notifier`.
+
+### Reliability
+
+- Network failures during the version check are swallowed silently (`AbortSignal.timeout(1500)` + caught fetch errors). Offline shouldn't mean broken.
+- Cache write failures are tolerated too — the worst case is re-fetching next run, capped at the unauth'd GitHub rate limit of 60/h/IP.
+
 ## 0.1.0
 
 ### Discovery
