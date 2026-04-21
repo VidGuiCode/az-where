@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(__dirname, "../../dist/cli.js");
+// Read version from package.json so the smoke test tracks the published
+// version automatically — previously hardcoded to "0.0.1", which broke CI
+// on every release bump.
+const PKG_VERSION = (
+  JSON.parse(readFileSync(path.resolve(__dirname, "../../package.json"), "utf-8")) as {
+    version: string;
+  }
+).version;
 
 function run(args: string[]): string {
   return execFileSync(process.execPath, [CLI_PATH, ...args], {
@@ -16,7 +25,7 @@ function run(args: string[]): string {
 describe("CLI smoke tests", () => {
   it("shows version", () => {
     const output = run(["--version"]);
-    expect(output.trim()).toBe("0.0.1");
+    expect(output.trim()).toBe(PKG_VERSION);
   });
 
   it("shows help", () => {
