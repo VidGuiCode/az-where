@@ -1,0 +1,63 @@
+{
+  "name": "az-where",
+  "version": "0.0.1",
+  "description": "Unofficial CLI that answers 'where in Azure can I actually deploy this?'",
+  "license": "MIT",
+  "private": false,
+  "type": "module",
+  "bin": {
+    "az-where": "./dist/cli.js",
+    "azw": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "prepare": "node --version",
+    "prepack": "npm run build",
+    "build": "tsc -p tsconfig.json",
+    "clean": "powershell -NoProfile -Command \"if (Test-Path dist) { Remove-Item -Recurse -Force dist }\"",
+    "dev": "bun src/cli.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "format": "prettier --write src/**/*.ts",
+    "format:check": "prettier --check src/**/*.ts",
+    "verify-pack": "bash scripts/verify-pack.sh"
+  },
+  "keywords": [
+    "azure",
+    "az",
+    "cli",
+    "regions",
+    "sku",
+    "quota"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VidGuiCode/az-where.git"
+  },
+  "bugs": {
+    "url": "https://github.com/VidGuiCode/az-where/issues"
+  },
+  "homepage": "https://github.com/VidGuiCode/az-where#readme",
+  "dependencies": {
+    "commander": "^13.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.23.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.23.0",
+    "eslint-config-prettier": "^10.1.1",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.28.0",
+    "vitest": "^3.2.4"
+  }
+}
