@@ -60,7 +60,15 @@ npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.1.0/a
 **Always-latest via the GitHub release API** (resolves to the newest published `.tgz`):
 
 ```bash
-npm install -g "$(gh release view --repo VidGuiCode/az-where --json assets --jq '.assets[] | select(.name | endswith(".tgz")) | .url')"
+# bash / zsh
+npm install -g "$(gh release view --repo VidGuiCode/az-where --json assets -q '.assets[0].url')"
+```
+
+```powershell
+# PowerShell 5.1 / 7 — capture the URL first, then install.
+# (PS's native-arg passing mangles chained jq filters, so keep the -q expression simple.)
+$url = gh release view --repo VidGuiCode/az-where --json assets -q '.assets[0].url'
+npm install -g $url
 ```
 
 **From source** (clone + build):
