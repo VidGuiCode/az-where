@@ -5,6 +5,7 @@ import { exitWithError, ValidationError } from "../core/errors.js";
 import { printInfo, printJson, printTable } from "../core/output.js";
 import { Spinner } from "../core/progress.js";
 import { c, colorEnabled } from "../core/color.js";
+import { armCacheSummary } from "../core/cache.js";
 import type { AzVmSku } from "../core/types.js";
 
 /**
@@ -22,6 +23,7 @@ export function createSkusCommand(): Command {
     .option("--asia", "Only SKUs offered in an Asia Pacific region")
     .option("--geography <group>", "geographyGroup filter (or 'all')", "all")
     .option("--family <letter>", "Filter by family prefix (e.g. B, D, E, F, L, N)")
+    .option("--refresh", "Bypass cached ARM SKU/location data")
     .option("--json", "Machine-readable JSON output")
     .action(async (opts) => {
       try {
@@ -66,8 +68,9 @@ export function createSkusCommand(): Command {
           [skus, locations] = await Promise.all([
             armList<AzVmSku>("/providers/Microsoft.Compute/skus?api-version=2021-07-01", {
               timeoutMs: 60_000,
+              refresh: Boolean(opts.refresh),
             }),
-            listLocations(),
+            listLocations({ refresh: Boolean(opts.refresh) }),
           ]);
         } finally {
           spinner.done();
@@ -141,6 +144,7 @@ export function createSkusCommand(): Command {
             kind: "skus",
             geography: geo ?? "all",
             family: opts.family ?? null,
+            cache: armCacheSummary(),
             skus: rows.map((r) => ({
               name: r.name,
               family: r.family,
@@ -194,13 +198,14 @@ export function createSkusCommand(): Command {
  */
 async function runSingleRegion(
   region: string,
-  opts: { family?: string; json?: boolean },
+  opts: { family?: string; json?: boolean; refresh?: boolean },
 ): Promise<void> {
   const spinner = new Spinner(`Fetching SKUs for ${region}`, 3);
   let skus: AzVmSku[];
   try {
     skus = await armList<AzVmSku>(
       `/providers/Microsoft.Compute/skus?api-version=2021-07-01&$filter=location eq '${encodeURIComponent(region)}'`,
+      { refresh: Boolean(opts.refresh) },
     );
   } finally {
     spinner.done();
@@ -238,6 +243,7 @@ async function runSingleRegion(
       kind: "skus",
       region,
       family: opts.family ?? null,
+      cache: armCacheSummary(),
       skus: rows.map((r) => ({
         name: r.name,
         family: r.family,

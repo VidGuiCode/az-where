@@ -4,6 +4,7 @@ import { printJson } from "../core/output.js";
 import { filterByGeography, listLocations, resolveGeography } from "../core/geo.js";
 import { scanRegions, sortVerdicts } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
+import { armCacheSummary } from "../core/cache.js";
 
 export function createPickCommand(): Command {
   return new Command("pick")
@@ -15,6 +16,7 @@ export function createPickCommand(): Command {
     .option("--asia", "Asia Pacific only")
     .option("--geography <group>", "geographyGroup filter", "all")
     .option("--concurrency <n>", "Parallel ARM calls (default 16)", "16")
+    .option("--refresh", "Bypass cached ARM location/SKU data")
     .option("--json", "Emit JSON with the pick")
     .action(async (positional: string | undefined, opts) => {
       try {
@@ -24,7 +26,11 @@ export function createPickCommand(): Command {
 
         const geoInput = opts.eu ? "eu" : opts.us ? "us" : opts.asia ? "asia" : opts.geography;
         const geo = resolveGeography(geoInput);
-        const all = await listLocations({ progressLabel: `Scanning for ${sku}`, etaSeconds: 5 });
+        const all = await listLocations({
+          progressLabel: `Scanning for ${sku}`,
+          etaSeconds: 5,
+          refresh: Boolean(opts.refresh),
+        });
         const locations = filterByGeography(all, geo);
         if (locations.length === 0) {
           throw new ValidationError(`No regions matched geography '${geoInput}'.`);
@@ -38,13 +44,20 @@ export function createPickCommand(): Command {
           sku,
           locations,
           concurrency,
+          refresh: Boolean(opts.refresh),
           stopWhen: (r) => r.verdict === "AVAILABLE",
         });
         const ready = sortVerdicts(raw).find((r) => r.verdict === "AVAILABLE");
 
         if (!ready) {
           if (opts.json) {
-            printJson({ schemaVersion: 1, kind: "pick", sku, picked: null });
+            printJson({
+              schemaVersion: 1,
+              kind: "pick",
+              sku,
+              cache: armCacheSummary(),
+              picked: null,
+            });
             process.exit(1);
           }
           process.stderr.write(`No region can deploy ${sku} right now.\n`);
@@ -56,6 +69,7 @@ export function createPickCommand(): Command {
             schemaVersion: 1,
             kind: "pick",
             sku,
+            cache: armCacheSummary(),
             picked: {
               region: ready.region,
               displayName: ready.displayName,

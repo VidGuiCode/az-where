@@ -1,4 +1,5 @@
 import { az } from "./az.js";
+import { isArmCacheablePath, readArmCache, writeArmCache } from "./cache.js";
 
 /**
  * Hit ARM directly with a single bearer token instead of shelling out to `az`
@@ -41,10 +42,20 @@ const MAX_RETRIES = 1;
 export interface ArmListOptions {
   /** Per-page timeout in ms. Default 10s; raise for unfiltered list endpoints. */
   timeoutMs?: number;
+  /** Bypass cached ARM list data for cacheable read-only endpoints. */
+  refresh?: boolean;
+  /** Disable cache reads/writes for this call. Defaults to true for safe endpoints. */
+  cache?: boolean;
 }
 
 export async function armList<T>(path: string, opts: ArmListOptions = {}): Promise<T[]> {
   const tok = await getToken();
+  const cacheable = opts.cache !== false && isArmCacheablePath(path);
+  if (cacheable) {
+    const cached = await readArmCache<T[]>(tok.subscription, path, opts.refresh);
+    if (cached) return cached;
+  }
+
   let url = path.startsWith("http")
     ? path
     : `https://management.azure.com/subscriptions/${tok.subscription}${path}`;
@@ -55,6 +66,7 @@ export async function armList<T>(path: string, opts: ArmListOptions = {}): Promi
     if (data.value) out.push(...data.value);
     url = data.nextLink ?? "";
   }
+  if (cacheable) await writeArmCache(tok.subscription, path, out);
   return out;
 }
 

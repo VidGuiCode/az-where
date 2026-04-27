@@ -6,6 +6,7 @@ export interface ScanOptions {
   sku: string;
   locations: AzLocation[];
   concurrency?: number;
+  refresh?: boolean;
   /**
    * Stop dispatching new regions once any completed result matches. In-flight
    * calls still finish; their results are kept. Used by `pick`, which only
@@ -47,7 +48,7 @@ export async function scanRegions(opts: ScanOptions): Promise<ScanResult> {
       let v: RegionVerdict;
       let status: "ok" | "sub" | "off" | "err";
       try {
-        v = await scanOne(loc, sku);
+        v = await scanOne(loc, sku, Boolean(opts.refresh));
         status = verdictStatus(v.verdict);
       } catch (err) {
         v = errorVerdict(loc, err);
@@ -78,11 +79,12 @@ function verdictStatus(v: RegionVerdict["verdict"]): "ok" | "sub" | "off" | "err
   return "ok";
 }
 
-async function scanOne(location: AzLocation, sku: string): Promise<RegionVerdict> {
+async function scanOne(location: AzLocation, sku: string, refresh: boolean): Promise<RegionVerdict> {
   const skus = await armList<AzVmSku>(
     `/providers/Microsoft.Compute/skus?api-version=2021-07-01&$filter=location eq '${encodeURIComponent(
       location.name,
     )}'`,
+    { refresh },
   );
 
   const base = baseVerdict(location);
@@ -105,6 +107,7 @@ async function scanOne(location: AzLocation, sku: string): Promise<RegionVerdict
 
   const usages = await armList<AzVmUsage>(
     `/providers/Microsoft.Compute/locations/${encodeURIComponent(location.name)}/usages?api-version=2021-07-01`,
+    { cache: false },
   ).catch(() => [] as AzVmUsage[]);
 
   const family = vmSku.family ?? null;

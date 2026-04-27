@@ -5,6 +5,7 @@ import { filterByGeography, listLocations, resolveGeography } from "../core/geo.
 import { scanRegions, sortVerdicts } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
 import { c, colorEnabled } from "../core/color.js";
+import { armCacheSummary } from "../core/cache.js";
 
 export function createRegionsCommand(): Command {
   return new Command("regions")
@@ -21,6 +22,7 @@ export function createRegionsCommand(): Command {
     )
     .option("--concurrency <n>", "Parallel ARM calls (default 16)", "16")
     .option("--all", "Show every region, including those where the SKU isn't offered")
+    .option("--refresh", "Bypass cached ARM location/SKU data")
     .option("--json", "Machine-readable JSON output")
     .option("--name", "Print one region name per line (for scripting)")
     .action(async (positional: string | undefined, opts) => {
@@ -32,7 +34,11 @@ export function createRegionsCommand(): Command {
         const geoInput = opts.eu ? "eu" : opts.us ? "us" : opts.asia ? "asia" : opts.geography;
         const geo = resolveGeography(geoInput);
 
-        const all = await listLocations({ progressLabel: `Scanning for ${sku}`, etaSeconds: 5 });
+        const all = await listLocations({
+          progressLabel: `Scanning for ${sku}`,
+          etaSeconds: 5,
+          refresh: Boolean(opts.refresh),
+        });
         const locations = filterByGeography(all, geo);
 
         if (locations.length === 0) {
@@ -40,7 +46,12 @@ export function createRegionsCommand(): Command {
         }
 
         const concurrency = Math.max(1, parseInt(opts.concurrency, 10) || 16);
-        const { rows: raw, elapsedMs } = await scanRegions({ sku, locations, concurrency });
+        const { rows: raw, elapsedMs } = await scanRegions({
+          sku,
+          locations,
+          concurrency,
+          refresh: Boolean(opts.refresh),
+        });
         const rows = sortVerdicts(raw);
 
         if (opts.name) {
@@ -60,6 +71,7 @@ export function createRegionsCommand(): Command {
             geography: geo ?? "all",
             scannedAt: new Date().toISOString(),
             elapsedMs,
+            cache: armCacheSummary(),
             regions: rows,
           });
           if (!deployable) process.exit(1);

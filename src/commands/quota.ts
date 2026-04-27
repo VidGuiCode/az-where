@@ -5,6 +5,7 @@ import { filterByGeography, listLocations, resolveGeography } from "../core/geo.
 import { scanRegions, sortVerdicts } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
 import { c, colorEnabled } from "../core/color.js";
+import { armCacheSummary } from "../core/cache.js";
 
 export function createQuotaCommand(): Command {
   return new Command("quota")
@@ -19,6 +20,7 @@ export function createQuotaCommand(): Command {
     .option("--geography <group>", "geographyGroup filter", "all")
     .option("--concurrency <n>", "Parallel ARM calls (default 16)", "16")
     .option("--all", "Also include regions where the SKU isn't offered or your sub is blocked")
+    .option("--refresh", "Bypass cached ARM location/SKU data")
     .option("--json", "Machine-readable JSON output")
     .action(async (positional: string | undefined, opts) => {
       try {
@@ -28,14 +30,23 @@ export function createQuotaCommand(): Command {
 
         const geoInput = opts.eu ? "eu" : opts.us ? "us" : opts.asia ? "asia" : opts.geography;
         const geo = resolveGeography(geoInput);
-        const all = await listLocations({ progressLabel: `Scanning for ${sku}`, etaSeconds: 5 });
+        const all = await listLocations({
+          progressLabel: `Scanning for ${sku}`,
+          etaSeconds: 5,
+          refresh: Boolean(opts.refresh),
+        });
         const locations = filterByGeography(all, geo);
         if (locations.length === 0) {
           throw new ValidationError(`No regions matched geography '${geoInput}'.`);
         }
 
         const concurrency = Math.max(1, parseInt(opts.concurrency, 10) || 16);
-        const { rows: raw, elapsedMs } = await scanRegions({ sku, locations, concurrency });
+        const { rows: raw, elapsedMs } = await scanRegions({
+          sku,
+          locations,
+          concurrency,
+          refresh: Boolean(opts.refresh),
+        });
 
         // Sort by free vCPU desc, then fall back to default verdict order.
         const sorted = sortVerdicts(raw).sort((a, b) => {
@@ -60,6 +71,7 @@ export function createQuotaCommand(): Command {
             geography: geo ?? "all",
             scannedAt: new Date().toISOString(),
             elapsedMs,
+            cache: armCacheSummary(),
             regions: rows,
           });
           if (!deployable) process.exit(1);

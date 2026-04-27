@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+### Performance
+
+- Add a zero-dependency ARM cache for locations and Compute SKU list endpoints with a 10-minute TTL.
+- Add `--refresh` on scan and SKU/location discovery commands to bypass cached ARM data.
+- Keep quota/usage calls live so deployability decisions do not use stale quota.
+- Add cache metadata to JSON outputs where cacheable ARM data is used.
+
 ## 0.2.2
 
 ### Fixes

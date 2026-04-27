@@ -63,16 +63,24 @@ describe("CLI smoke tests", () => {
     expect(output).toContain("--all");
     expect(output).toContain("--json");
     expect(output).toContain("--name");
+    expect(output).toContain("--refresh");
   });
 
   it("quota command accepts --all", () => {
     const output = run(["quota", "--help"]);
     expect(output).toContain("--all");
+    expect(output).toContain("--refresh");
   });
 
   it("pick command exists and has a help screen", () => {
     const output = run(["pick", "--help"]);
     expect(output).toContain("pick");
     expect(output).toContain("--eu");
+    expect(output).toContain("--refresh");
+  });
+
+  it("skus and geos expose --refresh", () => {
+    expect(run(["skus", "--help"])).toContain("--refresh");
+    expect(run(["geos", "--help"])).toContain("--refresh");
   });
 });

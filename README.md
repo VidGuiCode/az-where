@@ -4,7 +4,7 @@
 
 **Where in Azure can I actually deploy this VM size?**
 
-[![Release](https://img.shields.io/badge/release-v0.2.2-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
+[![Release](https://img.shields.io/badge/release-v0.3.0-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6?logo=typescript&logoColor=white)](tsconfig.json)
@@ -30,7 +30,7 @@ az login
 Install the current release:
 
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.2.2/az-where-0.2.2.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.3.0/az-where-0.3.0.tgz
 ```
 
 Or build from source:

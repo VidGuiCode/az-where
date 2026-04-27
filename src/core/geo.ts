@@ -39,12 +39,15 @@ const EXCLUDED_SUFFIX = /(stg|euap)$/i;
 export interface ListLocationsOptions {
   progressLabel?: string;
   etaSeconds?: number;
+  refresh?: boolean;
 }
 
 export async function listLocations(opts: ListLocationsOptions = {}): Promise<AzLocation[]> {
   const spinner = opts.progressLabel ? new Spinner(opts.progressLabel, opts.etaSeconds) : undefined;
   try {
-    const locations = await armList<AzLocation>("/locations?api-version=2022-12-01");
+    const locations = await armList<AzLocation>("/locations?api-version=2022-12-01", {
+      refresh: opts.refresh,
+    });
     return locations
       .filter((l) => l.metadata?.regionType === "Physical" || !l.metadata?.regionType)
       .filter((l) => !EXCLUDED_SUFFIX.test(l.name));
