@@ -7,7 +7,7 @@
 Two boundaries talk to Azure:
 
 - **Azure CLI (`az`)**: used for account context and `az account get-access-token`.
-- **ARM REST (`fetch`)**: used for locations, Compute SKU lists, and per-region usage/quota.
+- **ARM REST (`fetch`)**: used for locations, policy assignments, Compute SKU lists, and per-region usage/quota.
 
 The tool never creates, modifies, or deletes Azure resources.
 
@@ -43,12 +43,15 @@ Command handlers stay thin: parse flags, call core helpers, print output.
 
 `src/core/geo.ts` reads locations from ARM and filters out non-physical/internal regions.
 
+`src/core/policy.ts` reads subscription policy assignments and extracts enforced allowed-location lists.
+
 `src/core/scan.ts` scans regions in parallel. For each region it:
 
-1. Reads location-filtered Compute SKUs.
-2. Checks whether the target VM SKU exists.
-3. Checks `NotAvailableForSubscription` restrictions.
-4. Reads live usage/quota for the SKU family only when the SKU is offered and allowed.
+1. Applies Azure Policy allowed-location restrictions when enabled.
+2. Reads location-filtered Compute SKUs.
+3. Checks whether the target VM SKU exists.
+4. Checks `NotAvailableForSubscription` restrictions.
+5. Reads live usage/quota for the SKU family only when the SKU is offered and allowed.
 
 Quota/usage is intentionally never cached.
 
@@ -60,6 +63,7 @@ Quota/usage is intentionally never cached.
 | `QUOTA_UNKNOWN` | SKU offered, but usage/quota could not be matched |
 | `FULL` | SKU offered and allowed, but quota exhausted |
 | `BLOCKED_FOR_SUB` | SKU offered, but this subscription is blocked in that region |
+| `POLICY_DENIED` | Azure Policy allowed-location assignment blocks deployment in that region |
 | `SKU_NOT_OFFERED` | Azure does not offer the SKU in that region |
 
 `sortVerdicts()` orders deployable rows first. Human tables hide `SKU_NOT_OFFERED` rows by default; JSON keeps every row.
@@ -73,6 +77,8 @@ Quota/usage is intentionally never cached.
 - location-filtered Compute SKU list
 
 `--refresh` bypasses cached ARM data. Usage/quota endpoints are never cached so deployability decisions do not use stale quota.
+
+Policy assignments are not cached in v0.3.5. Policy remains live because it can directly decide whether `pick` may safely return a region for Terraform or scripts.
 
 ## Suggestion
 

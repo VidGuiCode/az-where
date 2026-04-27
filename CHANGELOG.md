@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.5
+
+### Policy Accuracy
+
+- Add Azure Policy allowed-location checks to `regions`, positional SKU scans, `pick`, `quota`, and `suggest`.
+- Add `POLICY_DENIED` verdicts so policy-blocked regions are not reported as deployable.
+- Add `--no-policy` for explicit opt-out and policy metadata in JSON scan outputs.
+
 ## 0.3.4
 
 ### Updater UX

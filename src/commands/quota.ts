@@ -6,6 +6,7 @@ import { scanRegions, sortVerdicts } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
 import { c, colorEnabled } from "../core/color.js";
 import { armCacheSummary } from "../core/cache.js";
+import { loadPolicyCheck, type PolicySummary } from "../core/policy.js";
 
 export function createQuotaCommand(): Command {
   return new Command("quota")
@@ -20,6 +21,7 @@ export function createQuotaCommand(): Command {
     .option("--geography <group>", "geographyGroup filter", "all")
     .option("--concurrency <n>", "Parallel ARM calls (default 16)", "16")
     .option("--all", "Also include regions where the SKU isn't offered or your sub is blocked")
+    .option("--no-policy", "Skip Azure Policy allowed-location checks")
     .option("--refresh", "Bypass cached ARM location/SKU data")
     .option("--json", "Machine-readable JSON output")
     .action(async (positional: string | undefined, opts) => {
@@ -41,11 +43,16 @@ export function createQuotaCommand(): Command {
         }
 
         const concurrency = Math.max(1, parseInt(opts.concurrency, 10) || 16);
+        const policy = await loadPolicyCheck({
+          enabled: opts.policy !== false,
+          required: false,
+        });
         const { rows: raw, elapsedMs } = await scanRegions({
           sku,
           locations,
           concurrency,
           refresh: Boolean(opts.refresh),
+          policy: policy.check,
         });
 
         // Sort by free vCPU desc, then fall back to default verdict order.
@@ -59,7 +66,9 @@ export function createQuotaCommand(): Command {
         // question doesn't apply (SKU not offered, subscription blocked).
         // `regions` is still the right command for the full availability
         // picture; `--all` here opts into it explicitly.
-        const rows = opts.all ? sorted : sorted.filter((r) => r.skuOffered);
+        const rows = opts.all
+          ? sorted
+          : sorted.filter((r) => r.skuOffered || r.verdict === "POLICY_DENIED");
         const dropped = sorted.length - rows.length;
         const deployable = rows.some((r) => r.verdict === "AVAILABLE");
 
@@ -72,6 +81,7 @@ export function createQuotaCommand(): Command {
             scannedAt: new Date().toISOString(),
             elapsedMs,
             cache: armCacheSummary(),
+            policy: policy.summary,
             regions: rows,
           });
           if (!deployable) process.exit(1);
@@ -79,9 +89,11 @@ export function createQuotaCommand(): Command {
         }
 
         if (rows.length === 0) {
+          printPolicyWarning(policy.summary);
           const msg = `No regions in ${geo ?? "scope"} offer ${sku}. Try: azw regions ${sku}${geo ? ` --geography ${geo}` : ""}`;
           printInfo(msg);
         } else {
+          printPolicyWarning(policy.summary);
           printVerdictTable(rows);
           if (dropped > 0) {
             const note = `+ ${dropped} regions hidden (not offered or subscription-blocked; --all to show)`;
@@ -94,4 +106,9 @@ export function createQuotaCommand(): Command {
         exitWithError(err, Boolean(opts.json));
       }
     });
+}
+
+function printPolicyWarning(policy: PolicySummary): void {
+  if (!policy.error) return;
+  process.stderr.write(`Azure Policy was not checked: ${policy.error}\n`);
 }

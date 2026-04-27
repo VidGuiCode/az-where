@@ -1,6 +1,6 @@
 {
   "name": "az-where",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Unofficial CLI that answers 'where in Azure can I actually deploy this?'",
   "license": "MIT",
   "private": false,

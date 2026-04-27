@@ -6,6 +6,7 @@ import { printInfo, printJson } from "../core/output.js";
 import { scanRegions, sortVerdicts } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
 import { chooseSuggestion, knownPlaces, resolvePlace } from "../core/suggest.js";
+import { loadPolicyCheck } from "../core/policy.js";
 
 export function createSuggestCommand(): Command {
   return new Command("suggest")
@@ -18,6 +19,7 @@ export function createSuggestCommand(): Command {
     .option("--geography <group>", "geographyGroup filter", "all")
     .option("--near <city>", "Prefer regions near a known city, e.g. Luxembourg")
     .option("--concurrency <n>", "Parallel ARM calls (default 16)", "16")
+    .option("--no-policy", "Skip Azure Policy allowed-location checks")
     .option("--refresh", "Bypass cached ARM location/SKU data")
     .option("--json", "Machine-readable JSON output")
     .action(async (positional: string | undefined, opts) => {
@@ -47,11 +49,16 @@ export function createSuggestCommand(): Command {
         }
 
         const concurrency = Math.max(1, parseInt(opts.concurrency, 10) || 16);
+        const policy = await loadPolicyCheck({
+          enabled: opts.policy !== false,
+          required: true,
+        });
         const { rows: raw, elapsedMs } = await scanRegions({
           sku,
           locations,
           concurrency,
           refresh: Boolean(opts.refresh),
+          policy: policy.check,
         });
         const rows = sortVerdicts(raw);
         const suggestion = chooseSuggestion(rows, near);
@@ -66,6 +73,7 @@ export function createSuggestCommand(): Command {
               near: nearInput || null,
               elapsedMs,
               cache: armCacheSummary(),
+              policy: policy.summary,
               suggested: null,
             });
             process.exit(1);
@@ -83,6 +91,7 @@ export function createSuggestCommand(): Command {
             near: nearInput || null,
             elapsedMs,
             cache: armCacheSummary(),
+            policy: policy.summary,
             suggested: {
               region: suggestion.row.region,
               displayName: suggestion.row.displayName,

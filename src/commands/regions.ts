@@ -6,6 +6,7 @@ import { scanRegions, sortVerdicts } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
 import { c, colorEnabled } from "../core/color.js";
 import { armCacheSummary } from "../core/cache.js";
+import { loadPolicyCheck, type PolicySummary } from "../core/policy.js";
 
 export function createRegionsCommand(): Command {
   return new Command("regions")
@@ -22,6 +23,7 @@ export function createRegionsCommand(): Command {
     )
     .option("--concurrency <n>", "Parallel ARM calls (default 16)", "16")
     .option("--all", "Show every region, including those where the SKU isn't offered")
+    .option("--no-policy", "Skip Azure Policy allowed-location checks")
     .option("--refresh", "Bypass cached ARM location/SKU data")
     .option("--json", "Machine-readable JSON output")
     .option("--name", "Print one region name per line (for scripting)")
@@ -46,15 +48,21 @@ export function createRegionsCommand(): Command {
         }
 
         const concurrency = Math.max(1, parseInt(opts.concurrency, 10) || 16);
+        const policy = await loadPolicyCheck({
+          enabled: opts.policy !== false,
+          required: false,
+        });
         const { rows: raw, elapsedMs } = await scanRegions({
           sku,
           locations,
           concurrency,
           refresh: Boolean(opts.refresh),
+          policy: policy.check,
         });
         const rows = sortVerdicts(raw);
 
         if (opts.name) {
+          printPolicyWarning(policy.summary);
           const ready = rows.filter((r) => r.verdict === "AVAILABLE");
           for (const r of ready) console.log(r.region);
           if (ready.length === 0) process.exit(1);
@@ -72,6 +80,7 @@ export function createRegionsCommand(): Command {
             scannedAt: new Date().toISOString(),
             elapsedMs,
             cache: armCacheSummary(),
+            policy: policy.summary,
             regions: rows,
           });
           if (!deployable) process.exit(1);
@@ -80,6 +89,7 @@ export function createRegionsCommand(): Command {
 
         const hidden = opts.all ? [] : rows.filter((r) => r.verdict === "SKU_NOT_OFFERED");
         const visible = opts.all ? rows : rows.filter((r) => r.verdict !== "SKU_NOT_OFFERED");
+        printPolicyWarning(policy.summary);
         printVerdictTable(visible);
         if (hidden.length > 0) {
           const note = `+ ${hidden.length} regions where Azure doesn't offer ${sku} (use --all to show)`;
@@ -94,4 +104,9 @@ export function createRegionsCommand(): Command {
         exitWithError(err, Boolean(opts.json));
       }
     });
+}
+
+function printPolicyWarning(policy: PolicySummary): void {
+  if (!policy.error) return;
+  process.stderr.write(`Azure Policy was not checked: ${policy.error}\n`);
 }

@@ -58,6 +58,17 @@ Planned improvements and features for upcoming releases. This is a living docume
 - Architecture refresh for ARM REST, cache, and suggest behavior.
 - `TRADEMARKS.md` and final unofficial-disclaimer audit.
 
+### 0.3.4 - Updater UX
+
+- `azw update` asks before installing newer releases.
+- Bare `azw` can surface the same interactive update prompt after help.
+
+### 0.3.5 - Azure Policy Accuracy
+
+- Azure Policy allowed-location checks for scan commands.
+- `POLICY_DENIED` verdicts so `pick` and `suggest` do not return policy-blocked regions.
+- `--no-policy` escape hatch and policy metadata in JSON output.
+
 ## Planned
 
 ### 0.4.0 - Multi-SKU Comparison

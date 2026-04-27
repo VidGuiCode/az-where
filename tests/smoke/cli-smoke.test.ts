@@ -63,12 +63,14 @@ describe("CLI smoke tests", () => {
     expect(output).toContain("--all");
     expect(output).toContain("--json");
     expect(output).toContain("--name");
+    expect(output).toContain("--no-policy");
     expect(output).toContain("--refresh");
   });
 
   it("quota command accepts --all", () => {
     const output = run(["quota", "--help"]);
     expect(output).toContain("--all");
+    expect(output).toContain("--no-policy");
     expect(output).toContain("--refresh");
   });
 
@@ -76,6 +78,7 @@ describe("CLI smoke tests", () => {
     const output = run(["pick", "--help"]);
     expect(output).toContain("pick");
     expect(output).toContain("--eu");
+    expect(output).toContain("--no-policy");
     expect(output).toContain("--refresh");
   });
 
@@ -83,6 +86,7 @@ describe("CLI smoke tests", () => {
     const output = run(["suggest", "--help"]);
     expect(output).toContain("suggest");
     expect(output).toContain("--near");
+    expect(output).toContain("--no-policy");
     expect(output).toContain("--json");
   });
 

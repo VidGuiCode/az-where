@@ -5,6 +5,7 @@ import { filterByGeography, listLocations, resolveGeography } from "../core/geo.
 import { scanRegions, sortVerdicts } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
 import { armCacheSummary } from "../core/cache.js";
+import { loadPolicyCheck } from "../core/policy.js";
 
 export function createPickCommand(): Command {
   return new Command("pick")
@@ -16,6 +17,7 @@ export function createPickCommand(): Command {
     .option("--asia", "Asia Pacific only")
     .option("--geography <group>", "geographyGroup filter", "all")
     .option("--concurrency <n>", "Parallel ARM calls (default 16)", "16")
+    .option("--no-policy", "Skip Azure Policy allowed-location checks")
     .option("--refresh", "Bypass cached ARM location/SKU data")
     .option("--json", "Emit JSON with the pick")
     .action(async (positional: string | undefined, opts) => {
@@ -37,6 +39,10 @@ export function createPickCommand(): Command {
         }
 
         const concurrency = Math.max(1, parseInt(opts.concurrency, 10) || 16);
+        const policy = await loadPolicyCheck({
+          enabled: opts.policy !== false,
+          required: true,
+        });
         // Stop the scan as soon as any region comes back AVAILABLE — `pick` only
         // needs one. In-flight calls still resolve (can't kill an open fetch
         // mid-body), but no new regions get queued.
@@ -45,6 +51,7 @@ export function createPickCommand(): Command {
           locations,
           concurrency,
           refresh: Boolean(opts.refresh),
+          policy: policy.check,
           stopWhen: (r) => r.verdict === "AVAILABLE",
         });
         const ready = sortVerdicts(raw).find((r) => r.verdict === "AVAILABLE");
@@ -56,6 +63,7 @@ export function createPickCommand(): Command {
               kind: "pick",
               sku,
               cache: armCacheSummary(),
+              policy: policy.summary,
               picked: null,
             });
             process.exit(1);
@@ -70,6 +78,7 @@ export function createPickCommand(): Command {
             kind: "pick",
             sku,
             cache: armCacheSummary(),
+            policy: policy.summary,
             picked: {
               region: ready.region,
               displayName: ready.displayName,

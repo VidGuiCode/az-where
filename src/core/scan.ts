@@ -1,4 +1,5 @@
 import { armList, getToken } from "./arm.js";
+import type { PolicyCheck } from "./policy.js";
 import { Progress } from "./progress.js";
 import type { AzLocation, AzVmSku, AzVmUsage, RegionVerdict } from "./types.js";
 
@@ -7,6 +8,7 @@ export interface ScanOptions {
   locations: AzLocation[];
   concurrency?: number;
   refresh?: boolean;
+  policy?: PolicyCheck;
   /**
    * Stop dispatching new regions once any completed result matches. In-flight
    * calls still finish; their results are kept. Used by `pick`, which only
@@ -48,7 +50,7 @@ export async function scanRegions(opts: ScanOptions): Promise<ScanResult> {
       let v: RegionVerdict;
       let status: "ok" | "sub" | "off" | "err";
       try {
-        v = await scanOne(loc, sku, Boolean(opts.refresh));
+        v = await scanOne(loc, sku, Boolean(opts.refresh), opts.policy);
         status = verdictStatus(v.verdict);
       } catch (err) {
         v = errorVerdict(loc, err);
@@ -70,16 +72,33 @@ export async function scanRegions(opts: ScanOptions): Promise<ScanResult> {
  * Reason hint for the progress log line so a ✗ discloses *why*:
  *   ok  — query succeeded (even if quota-full; it answered)
  *   sub — subscription is blocked in this region
+ *   sub — Azure Policy or subscription restrictions block this region
  *   off — Azure doesn't offer the SKU here
  *   err — ARM call failed
  */
 function verdictStatus(v: RegionVerdict["verdict"]): "ok" | "sub" | "off" | "err" {
-  if (v === "BLOCKED_FOR_SUB") return "sub";
+  if (v === "BLOCKED_FOR_SUB" || v === "POLICY_DENIED") return "sub";
   if (v === "SKU_NOT_OFFERED") return "off";
   return "ok";
 }
 
-async function scanOne(location: AzLocation, sku: string, refresh: boolean): Promise<RegionVerdict> {
+async function scanOne(
+  location: AzLocation,
+  sku: string,
+  refresh: boolean,
+  policy?: PolicyCheck,
+): Promise<RegionVerdict> {
+  const rawBase = baseVerdict(location);
+  const base = policy ? { ...rawBase, policyAllowed: true } : rawBase;
+  if (policy && !policy.isAllowed(location.name)) {
+    return {
+      ...base,
+      policyAllowed: false,
+      policyReason: policy.reason(location.name),
+      verdict: "POLICY_DENIED",
+    };
+  }
+
   const skus = await armList<AzVmSku>(
     `/providers/Microsoft.Compute/skus?api-version=2021-07-01&$filter=location eq '${encodeURIComponent(
       location.name,
@@ -87,7 +106,6 @@ async function scanOne(location: AzLocation, sku: string, refresh: boolean): Pro
     { refresh },
   );
 
-  const base = baseVerdict(location);
   const vmSku = skus.find((s) => s.resourceType === "virtualMachines" && s.name === sku);
   if (!vmSku) {
     return { ...base, skuOffered: false, verdict: "SKU_NOT_OFFERED" };
@@ -139,6 +157,8 @@ function baseVerdict(location: AzLocation): RegionVerdict {
     used: null,
     limit: null,
     free: null,
+    policyAllowed: null,
+    policyReason: null,
     verdict: "SKU_NOT_OFFERED",
   };
 }
@@ -158,7 +178,8 @@ export function sortVerdicts(rows: RegionVerdict[]): RegionVerdict[] {
     QUOTA_UNKNOWN: 1,
     FULL: 2,
     BLOCKED_FOR_SUB: 3,
-    SKU_NOT_OFFERED: 4,
+    POLICY_DENIED: 4,
+    SKU_NOT_OFFERED: 5,
   };
   return [...rows].sort((a, b) => {
     const r = rank[a.verdict] - rank[b.verdict];

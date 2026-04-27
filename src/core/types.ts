@@ -53,5 +53,13 @@ export interface RegionVerdict {
   used: number | null;
   limit: number | null;
   free: number | null;
-  verdict: "AVAILABLE" | "FULL" | "SKU_NOT_OFFERED" | "BLOCKED_FOR_SUB" | "QUOTA_UNKNOWN";
+  policyAllowed: boolean | null;
+  policyReason: string | null;
+  verdict:
+    | "AVAILABLE"
+    | "FULL"
+    | "SKU_NOT_OFFERED"
+    | "BLOCKED_FOR_SUB"
+    | "POLICY_DENIED"
+    | "QUOTA_UNKNOWN";
 }

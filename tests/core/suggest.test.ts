@@ -12,15 +12,26 @@ const row = (region: string, free: number, physicalLocation: string): RegionVerd
   used: 0,
   limit: 10,
   free,
+  policyAllowed: null,
+  policyReason: null,
   verdict: "AVAILABLE",
 });
 
 describe("suggestion scoring", () => {
   it("only considers available rows", () => {
     const blocked: RegionVerdict = { ...row("blocked", 99, "Paris"), verdict: "BLOCKED_FOR_SUB" };
+    const policyDenied: RegionVerdict = {
+      ...row("policy", 100, "Paris"),
+      policyAllowed: false,
+      policyReason: "policy denied",
+      verdict: "POLICY_DENIED",
+    };
     expect(chooseSuggestion([blocked, row("westeurope", 1, "Netherlands")])?.row.region).toBe(
       "westeurope",
     );
+    expect(
+      chooseSuggestion([policyDenied, row("swedencentral", 1, "Gavle")])?.row.region,
+    ).toBe("swedencentral");
   });
 
   it("prefers higher free quota without a near city", () => {

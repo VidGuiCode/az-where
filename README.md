@@ -4,7 +4,7 @@
 
 **Where in Azure can I actually deploy this VM size?**
 
-[![Release](https://img.shields.io/badge/release-v0.3.4-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
+[![Release](https://img.shields.io/badge/release-v0.3.5-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6?logo=typescript&logoColor=white)](tsconfig.json)
@@ -15,7 +15,7 @@
 azw B1s --eu
 ```
 
-`az-where` checks Azure VM SKU availability, subscription restrictions, and vCPU quota across regions, then prints the places where the size can actually deploy.
+`az-where` checks Azure Policy allowed locations, VM SKU availability, subscription restrictions, and vCPU quota across regions, then prints the places where the size can actually deploy.
 
 It is an unofficial community CLI. It wraps the official [Azure CLI (`az`)](https://learn.microsoft.com/cli/azure/) for authentication and uses ARM REST for the region checks. It never stores credentials.
 
@@ -30,7 +30,7 @@ az login
 Install the current release:
 
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.3.4/az-where-0.3.4.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.3.5/az-where-0.3.5.tgz
 ```
 
 Or build from source:
@@ -74,6 +74,7 @@ REGION              GEO    LOCATION          OFFERED   QUOTA        VERDICT
 westeurope          EU     Amsterdam         yes       6/10 free    DEPLOY
 francecentral       EU     Paris             yes       0/10 free    QUOTA FULL
 germanywestcentral  EU     Frankfurt         no        -            SKU NOT OFFERED
+denmarkeast         EU     Copenhagen        no        -            POLICY DENIED
 
 Ready to deploy Standard_B1s (1): westeurope
 Scanned 17 regions in 5.8s.
@@ -106,6 +107,7 @@ Run `azw <command> --help` for command-specific flags.
 | `--json` | Structured JSON output; progress stays off |
 | `--compact` | One-line JSON for scripts and agents |
 | `--name` | Region names only, for `regions` / `pick` |
+| `--no-policy` | Skip Azure Policy allowed-location checks |
 | `--no-update-check` | Skip the once-per-day release check |
 
 Environment:
@@ -124,7 +126,7 @@ Exit codes: `0` success, `1` no deployable region or generic error, `2` Azure au
 az account set --subscription "<subscription id or name>"
 ```
 
-The scanner is read-only. It calls ARM endpoints for locations, VM SKUs, and usage/quota; it never creates, modifies, or deletes Azure resources.
+The scanner is read-only. It calls ARM endpoints for locations, policy assignments, VM SKUs, and usage/quota; it never creates, modifies, or deletes Azure resources.
 
 ## How It Works
 
@@ -133,10 +135,11 @@ The scanner is read-only. It calls ARM endpoints for locations, VM SKUs, and usa
 The main read-only ARM calls are:
 
 - `GET /subscriptions/{id}/locations`
+- `GET /subscriptions/{id}/providers/Microsoft.Authorization/policyAssignments`
 - `GET /subscriptions/{id}/providers/Microsoft.Compute/skus`
 - `GET /subscriptions/{id}/providers/Microsoft.Compute/locations/{region}/usages`
 
-Location and SKU responses are cached briefly for faster repeated scans. Quota/usage responses are always live so deployability decisions do not use stale quota.
+Location and SKU responses are cached briefly for faster repeated scans. Policy and quota/usage responses are always live so deployability decisions do not use stale restrictions or quota.
 
 ## Scripting
 
@@ -144,7 +147,7 @@ Location and SKU responses are cached briefly for faster repeated scans. Quota/u
 terraform apply -var="location=$(azw pick B1s --eu)"
 ```
 
-`pick` exits with code `1` if no region qualifies, so deployment scripts fail fast instead of receiving an empty location.
+`pick` exits with code `1` if no region qualifies, including when all otherwise-good regions are blocked by Azure Policy, so deployment scripts fail fast instead of receiving an unusable location.
 
 For machine-readable output:
 

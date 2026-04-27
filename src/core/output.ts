@@ -82,6 +82,7 @@ const VERDICT_LABEL: Record<RegionVerdict["verdict"], string> = {
   AVAILABLE: "✓ DEPLOY",
   FULL: "✗ QUOTA FULL",
   BLOCKED_FOR_SUB: "✗ SUB BLOCKED",
+  POLICY_DENIED: "✗ POLICY DENIED",
   SKU_NOT_OFFERED: "✗ SKU NOT OFFERED",
   QUOTA_UNKNOWN: "! QUOTA UNKNOWN",
 };
@@ -94,6 +95,7 @@ function verdictCell(v: RegionVerdict["verdict"]): string {
       return c.green(c.bold(label));
     case "FULL":
     case "BLOCKED_FOR_SUB":
+    case "POLICY_DENIED":
     case "SKU_NOT_OFFERED":
       return c.red(label);
     case "QUOTA_UNKNOWN":
