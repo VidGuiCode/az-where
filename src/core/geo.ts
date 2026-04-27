@@ -1,4 +1,5 @@
 import { armList } from "./arm.js";
+import { Spinner } from "./progress.js";
 import type { AzLocation } from "./types.js";
 
 /**
@@ -35,11 +36,21 @@ const EXCLUDED_SUFFIX = /(stg|euap)$/i;
  *     the console's active code page (cp850/cp1252), which mangles names
  *     like `Gävle` into `G�vle` before Node sees them. ARM is pure UTF-8.
  */
-export async function listLocations(): Promise<AzLocation[]> {
-  const locations = await armList<AzLocation>("/locations?api-version=2022-12-01");
-  return locations
-    .filter((l) => l.metadata?.regionType === "Physical" || !l.metadata?.regionType)
-    .filter((l) => !EXCLUDED_SUFFIX.test(l.name));
+export interface ListLocationsOptions {
+  progressLabel?: string;
+  etaSeconds?: number;
+}
+
+export async function listLocations(opts: ListLocationsOptions = {}): Promise<AzLocation[]> {
+  const spinner = opts.progressLabel ? new Spinner(opts.progressLabel, opts.etaSeconds) : undefined;
+  try {
+    const locations = await armList<AzLocation>("/locations?api-version=2022-12-01");
+    return locations
+      .filter((l) => l.metadata?.regionType === "Physical" || !l.metadata?.regionType)
+      .filter((l) => !EXCLUDED_SUFFIX.test(l.name));
+  } finally {
+    spinner?.done();
+  }
 }
 
 export function filterByGeography(locations: AzLocation[], group: string | null): AzLocation[] {

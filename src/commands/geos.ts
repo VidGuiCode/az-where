@@ -9,7 +9,10 @@ export function createGeosCommand(): Command {
     .option("--json", "Machine-readable JSON output")
     .action(async (opts) => {
       try {
-        const locations = await listLocations();
+        const locations = await listLocations({
+          progressLabel: "Fetching Azure regions",
+          etaSeconds: 5,
+        });
         const groups = new Map<string, number>();
         for (const l of locations) {
           const g = l.metadata?.geographyGroup ?? "(unknown)";

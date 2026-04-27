@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { az } from "../core/az.js";
 import { printInfo, printJson } from "../core/output.js";
 import { exitWithError } from "../core/errors.js";
+import { Spinner } from "../core/progress.js";
 import type { AzAccount } from "../core/types.js";
 
 export function createWhereCommand(): Command {
@@ -10,7 +11,13 @@ export function createWhereCommand(): Command {
     .option("--json", "Output raw JSON")
     .action(async (opts) => {
       try {
-        const account = await az<AzAccount>(["account", "show"]);
+        const spinner = new Spinner("Checking Azure account", 3);
+        let account: AzAccount;
+        try {
+          account = await az<AzAccount>(["account", "show"]);
+        } finally {
+          spinner.done();
+        }
 
         if (opts.json) {
           printJson({

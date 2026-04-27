@@ -24,7 +24,7 @@ export function createPickCommand(): Command {
 
         const geoInput = opts.eu ? "eu" : opts.us ? "us" : opts.asia ? "asia" : opts.geography;
         const geo = resolveGeography(geoInput);
-        const all = await listLocations();
+        const all = await listLocations({ progressLabel: `Scanning for ${sku}`, etaSeconds: 5 });
         const locations = filterByGeography(all, geo);
         if (locations.length === 0) {
           throw new ValidationError(`No regions matched geography '${geoInput}'.`);

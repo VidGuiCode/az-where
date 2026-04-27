@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+### UX
+
+- Show progress immediately during Azure token and region startup work for `regions`, positional SKU scans, `pick`, `quota`, `geos`, `where`, and `update`.
+- Keep scan wording user-facing: SKU scans show `Scanning for <sku>` from startup, then switch to the per-region progress bar once the region count is known.
+- Slim the README into a shorter first-run guide and fix stale concurrency/ARM wording.
+
 ## 0.2.0
 
 ### Features

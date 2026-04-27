@@ -3,6 +3,7 @@ import { checkForUpdate, normalizeTag } from "../core/updateCheck.js";
 import { printInfo, printJson } from "../core/output.js";
 import { c, colorEnabled } from "../core/color.js";
 import { exitWithError } from "../core/errors.js";
+import { Spinner } from "../core/progress.js";
 
 /**
  * `azw update` — discoverable surface for the version banner. Prints the
@@ -21,7 +22,13 @@ export function createUpdateCommand(
     .option("--no-update-check", "(ignored here — this command *is* the update check)")
     .action(async (opts) => {
       try {
-        const status = await checkForUpdate(currentVersion);
+        const spinner = new Spinner("Checking latest release", 2);
+        let status: Awaited<ReturnType<typeof checkForUpdate>>;
+        try {
+          status = await checkForUpdate(currentVersion);
+        } finally {
+          spinner.done();
+        }
         const current = status.currentVersion;
         const latest = status.latestVersion;
 
