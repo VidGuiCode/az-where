@@ -1,52 +1,75 @@
 # Roadmap
 
-Planned improvements and features for upcoming releases. Living document — items may shift between releases or be dropped based on usage and feedback. See [context/VISION.md](../context/VISION.md) for the product thesis.
+Planned improvements and features for upcoming releases. This is a living document: version targets can move based on usage, implementation risk, and feedback.
 
----
+## Released
 
-## v0.1 — Minimum viable scope
+### 0.0.1 - Initial CLI
 
-### Features
+- `azw <sku>` positional shorthand with automatic `Standard_` normalization.
+- `regions`, `quota`, `pick`, `geos`, and `where` commands.
+- Geography shortcuts: `--eu`, `--us`, `--asia`, plus `--geography <group>`.
+- Table, JSON, compact JSON, and name-only output modes.
+- Live progress on TTY, log-line fallback in CI/non-TTY.
 
-- ~~**`azw B1s --eu`** — positional-SKU shorthand, auto-prefixed to `Standard_B1s`~~ — shipped
-- ~~**`azw regions <sku>`** — parallel per-region scan, coloured verdict table (`✓ DEPLOY` / `✗ QUOTA FULL` / `✗ SKU NOT OFFERED` / `! QUOTA UNKNOWN`)~~ — shipped
-- ~~**`azw quota <sku>`** — same scan sorted by free vCPU descending~~ — shipped
-- ~~**`azw pick <sku>`** — single region name on stdout; exit 1 if none qualify~~ — shipped
-- ~~**`azw geos`** — enumerate `geographyGroup` values the subscription sees~~ — shipped
-- ~~**`--eu` / `--us` / `--asia`** sugar over `--geography`~~ — shipped
-- ~~**`--json` / `--compact` / `--name`** three output formats~~ — shipped
-- ~~**Live progress bar with rolling ETA** on TTY, log-line fallback on CI / non-TTY / `NO_COLOR`~~ — shipped
-- ~~**UTF-8 safe table rendering** (ANSI-aware padding via `src/core/color.ts`)~~ — shipped
-- ~~**Post-pack smoke test** covers both `az-where` and `azw` bin entries~~ — shipped
+### 0.1.0 - ARM Scanner And SKU Discovery
 
-### Pending for v0.1
+- Direct ARM REST scanner using a bearer token from the current Azure CLI login.
+- `azw skus` for discovering VM SKU names by geography, family, or single region.
+- Faster region scans with parallel ARM requests.
+- Subscription-blocked verdicts, SKU-not-offered folding, and improved output.
 
-- **TRADEMARKS.md** + prominent unofficial disclaimer audit
+### 0.2.0 - Updates
 
----
+- `azw update` command.
+- Background GitHub release check with a 24h cache.
+- Update-check suppression for scripts, CI, JSON/name output, and explicit opt-out.
 
-## v0.2 — Caching and diagnostics
+### 0.2.1 - Startup UX And Docs
 
-- **Persistent SKU-list cache** under the user's XDG cache dir with a short TTL (5–15 min)
-- **`--refresh` flag** to bypass the cache
-- **Better diagnostics on `az` failures** — surface whether the failure was auth, quota, or SKU offering
-- **`--near <city>`** option for `pick` that sorts by geographic proximity using `physicalLocation`
+- Progress appears immediately during Azure token and region startup work.
+- Startup scan wording now matches the user-facing scan command.
+- README slimmed down into a shorter first-run guide.
 
----
+### 0.2.2 - Update Fixes
 
-## v0.3 — Stretch scope
+- Bare `azw` can now show the post-help update banner.
+- `azw update` forces a fresh GitHub release check instead of trusting the 24h cache.
 
-- **`azw suggest <sku>`** — one best region with a short explanation of *why* it was picked (quota headroom × latency × geography)
-- **`azw verify <file.tf | file.bicep>`** — read resource definitions, check each `location + sku` pair, flag problems before you waste an `apply` cycle
-- **`azw compare --skus B1s,B2s,D2s_v5`** — side-by-side matrix across sizes and regions
+## Planned
 
----
+### 0.3.0 - Faster Repeated Scans And Smarter Picks
 
-## Possible future modules
+- Persistent cache for locations and SKU data under the user's platform cache directory.
+- `--refresh` flag to bypass cached ARM data.
+- Better diagnostics for auth failures, ARM failures, subscription blocks, SKU-not-offered, and quota exhaustion.
+- `--near <city>` for `pick` / `suggest` so region choice can prefer a sensible location.
+- `azw suggest <sku>`: one recommended region plus a short explanation of why it was chosen.
+- Documentation cleanup so README, architecture, and roadmap all reflect the current ARM REST implementation.
+- `TRADEMARKS.md` and final unofficial-disclaimer audit.
 
-- Pricing lookup via the Azure Retail Prices API
-- Multi-cloud (AWS/GCP) modules — the name and design leave room, but Azure comes first
+### 0.4.0 - Multi-SKU Comparison
 
----
+- `azw compare --skus B1s,B2s,D2s_v5`.
+- Matrix-style view across regions and SKU sizes.
+- JSON shape for agents/scripts to choose fallback sizes automatically.
+
+### 0.5.0 - IaC Preflight
+
+- `azw verify <file.tf | file.bicep>`.
+- Detect `location + sku` pairs before deployment.
+- Report deployability, quota, and subscription-blocking issues before `terraform apply` or Bicep deployment.
+
+### Later
+
+- Pricing lookup via the Azure Retail Prices API.
+- Broader Azure resource checks beyond VM SKUs.
+- Possible multi-cloud modules if the Azure workflow proves stable first.
+
+## Open Questions
+
+- Should `pick` stay quiet by default forever, or gain an explicit `--progress` / `--verbose` mode?
+- Should `suggest` replace most human uses of `pick`, leaving `pick` as the strict scripting command?
+- Should cache be opt-in at first, or enabled by default with `--refresh` as the escape hatch?
 
 Feedback and suggestions welcome via [GitHub Issues](https://github.com/VidGuiCode/az-where/issues).

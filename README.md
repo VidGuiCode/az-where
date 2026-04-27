@@ -141,10 +141,10 @@ azw B1s --eu --json --compact
 ## Development
 
 ```bash
-npm install
-npm run dev -- B1s --eu
-npm run typecheck
-npm test
+bun install
+bun run dev -- B1s --eu
+bun run typecheck
+bun test
 ```
 
 More details live in [docs/architecture.md](docs/architecture.md), with future ideas in [docs/roadmap.md](docs/roadmap.md).
