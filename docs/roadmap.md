@@ -36,17 +36,29 @@ Planned improvements and features for upcoming releases. This is a living docume
 - Bare `azw` can now show the post-help update banner.
 - `azw update` forces a fresh GitHub release check instead of trusting the 24h cache.
 
-## Planned
-
-### 0.3.0 - Faster Repeated Scans And Smarter Picks
+### 0.3.0 - Cache And Refresh
 
 - Persistent cache for locations and SKU data under the user's platform cache directory.
 - `--refresh` flag to bypass cached ARM data.
-- Better diagnostics for auth failures, ARM failures, subscription blocks, SKU-not-offered, and quota exhaustion.
-- `--near <city>` for `pick` / `suggest` so region choice can prefer a sensible location.
+- Quota/usage remains live.
+
+### 0.3.1 - Diagnostics
+
+- Typed ARM HTTP errors with status, endpoint, ARM code, and ARM message.
+- Better human and JSON diagnostics for ARM failures.
+
+### 0.3.2 - Suggest And Near
+
 - `azw suggest <sku>`: one recommended region plus a short explanation of why it was chosen.
-- Documentation cleanup so README, architecture, and roadmap all reflect the current ARM REST implementation.
+- `--near <city>` for location-aware suggestions using a built-in coordinate list.
+
+### 0.3.3 - Docs And Legal
+
+- README "How It Works" section.
+- Architecture refresh for ARM REST, cache, and suggest behavior.
 - `TRADEMARKS.md` and final unofficial-disclaimer audit.
+
+## Planned
 
 ### 0.4.0 - Multi-SKU Comparison
 
@@ -65,11 +77,5 @@ Planned improvements and features for upcoming releases. This is a living docume
 - Pricing lookup via the Azure Retail Prices API.
 - Broader Azure resource checks beyond VM SKUs.
 - Possible multi-cloud modules if the Azure workflow proves stable first.
-
-## Open Questions
-
-- Should `pick` stay quiet by default forever, or gain an explicit `--progress` / `--verbose` mode?
-- Should `suggest` replace most human uses of `pick`, leaving `pick` as the strict scripting command?
-- Should cache be opt-in at first, or enabled by default with `--refresh` as the escape hatch?
 
 Feedback and suggestions welcome via [GitHub Issues](https://github.com/VidGuiCode/az-where/issues).

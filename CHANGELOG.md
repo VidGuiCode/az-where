@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.3
+
+### Documentation
+
+- Add a README "How It Works" section describing Azure CLI token minting, direct ARM HTTPS calls, and live quota behavior.
+- Update architecture and roadmap docs to match the current ARM REST implementation and v0.3 release train.
+- Add `TRADEMARKS.md` with the unofficial Microsoft/Azure disclaimer.
+
 ## 0.3.2
 
 ### Recommendation

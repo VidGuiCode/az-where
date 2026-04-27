@@ -4,7 +4,7 @@
 
 **Where in Azure can I actually deploy this VM size?**
 
-[![Release](https://img.shields.io/badge/release-v0.3.2-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
+[![Release](https://img.shields.io/badge/release-v0.3.3-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6?logo=typescript&logoColor=white)](tsconfig.json)
@@ -30,7 +30,7 @@ az login
 Install the current release:
 
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.3.2/az-where-0.3.2.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.3.3/az-where-0.3.3.tgz
 ```
 
 Or build from source:
@@ -126,6 +126,18 @@ az account set --subscription "<subscription id or name>"
 
 The scanner is read-only. It calls ARM endpoints for locations, VM SKUs, and usage/quota; it never creates, modifies, or deletes Azure resources.
 
+## How It Works
+
+`az-where` asks the Azure CLI for a bearer token with `az account get-access-token`, then calls Azure Resource Manager directly over HTTPS.
+
+The main read-only ARM calls are:
+
+- `GET /subscriptions/{id}/locations`
+- `GET /subscriptions/{id}/providers/Microsoft.Compute/skus`
+- `GET /subscriptions/{id}/providers/Microsoft.Compute/locations/{region}/usages`
+
+Location and SKU responses are cached briefly for faster repeated scans. Quota/usage responses are always live so deployability decisions do not use stale quota.
+
 ## Scripting
 
 ```bash
@@ -153,4 +165,4 @@ More details live in [docs/architecture.md](docs/architecture.md), with future i
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). See [TRADEMARKS.md](TRADEMARKS.md) for Microsoft/Azure trademark notes.
