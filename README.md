@@ -4,7 +4,7 @@
 
 **Where in Azure can I actually deploy this VM size?**
 
-[![Release](https://img.shields.io/badge/release-v0.3.3-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
+[![Release](https://img.shields.io/badge/release-v0.3.4-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6?logo=typescript&logoColor=white)](tsconfig.json)
@@ -30,7 +30,7 @@ az login
 Install the current release:
 
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.3.3/az-where-0.3.3.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.3.4/az-where-0.3.4.tgz
 ```
 
 Or build from source:
@@ -64,7 +64,7 @@ Two binaries are installed: `azw` and `az-where`. They are the same tool.
 | List geography groups your subscription sees | `azw geos` |
 | Discover VM SKU names | `azw skus --eu --family B` |
 | Show current Azure identity/subscription | `azw where` |
-| Check for a newer release | `azw update` |
+| Check/install a newer release | `azw update` |
 
 ## Example Output
 
@@ -91,7 +91,7 @@ azw quota <sku>         # quota-focused view, sorted by free vCPUs
 azw skus                # discover VM SKU names
 azw geos                # list Azure geographyGroup values
 azw where               # show current Azure account context
-azw update              # print update/install commands
+azw update              # check for updates and ask before installing
 ```
 
 Run `azw <command> --help` for command-specific flags.
@@ -112,7 +112,7 @@ Environment:
 
 - `NO_COLOR=1` disables ANSI colour.
 - `CI=true` disables live redraws and uses log-style progress.
-- `AZ_WHERE_NO_UPDATE_CHECK=1` disables the update banner.
+- `AZ_WHERE_NO_UPDATE_CHECK=1` disables the automatic update check.
 
 Exit codes: `0` success, `1` no deployable region or generic error, `2` Azure auth required, `3` validation error.
 

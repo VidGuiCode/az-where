@@ -33,7 +33,7 @@ The tool never creates, modifies, or deletes Azure resources.
 | `quota.ts` | `azw quota <sku>` - quota-focused view sorted by free vCPUs |
 | `geos.ts` | `azw geos` - geography groups visible to the subscription |
 | `skus.ts` | `azw skus` - VM SKU discovery |
-| `update.ts` | `azw update` - latest-release check and install commands |
+| `update.ts` | `azw update` - latest-release check and confirmed install flow |
 
 Command handlers stay thin: parse flags, call core helpers, print output.
 

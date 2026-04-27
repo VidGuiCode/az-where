@@ -1,5 +1,5 @@
 import readline from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
+import { stdin as input, stdout as output, stderr } from "node:process";
 import { NonInteractiveError } from "./errors.js";
 import { isNonInteractiveMode } from "./runtime.js";
 
@@ -15,4 +15,14 @@ export async function ask(question: string, defaultValue?: string): Promise<stri
   const answer = await rl.question(prompt);
   rl.close();
   return answer.trim() || defaultValue || "";
+}
+
+export async function confirm(question: string, defaultValue = false): Promise<boolean> {
+  if (isNonInteractiveMode()) return defaultValue;
+  const suffix = defaultValue ? "[Y/n]" : "[y/N]";
+  const rl = readline.createInterface({ input, output: stderr });
+  const answer = (await rl.question(`${question} ${suffix}: `)).trim().toLowerCase();
+  rl.close();
+  if (!answer) return defaultValue;
+  return answer === "y" || answer === "yes";
 }

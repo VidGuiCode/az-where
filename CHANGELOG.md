@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.4
+
+### Updater UX
+
+- Change `azw update` into an interactive update flow that asks `Install now? [y/N]` before running `npm install -g`.
+- Make bare `azw` run the same update check after help and offer the same install prompt when an update is available.
+- Stop printing the automatic update banner after `azw update`, so the update message is not duplicated.
+
 ## 0.3.3
 
 ### Documentation

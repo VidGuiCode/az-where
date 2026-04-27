@@ -200,6 +200,6 @@ export async function maybePrintUpdateBanner(currentVersion: string): Promise<vo
   if (shouldSkipAutomaticBanner()) return;
   const status = await checkForUpdate(currentVersion);
   if (!status.behind || !status.latestVersion) return;
-  const msg = `A new az-where is available: ${status.latestVersion} (you're on ${status.currentVersion}). Run 'azw update' for install steps, or set AZ_WHERE_NO_UPDATE_CHECK=1 to silence this.`;
+  const msg = `A new az-where is available: ${status.latestVersion} (you're on ${status.currentVersion}). Run 'azw update' to install it, or set AZ_WHERE_NO_UPDATE_CHECK=1 to silence this.`;
   process.stderr.write(`\n${colorEnabled() ? c.dim(msg) : msg}\n`);
 }

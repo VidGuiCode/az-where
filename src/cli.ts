@@ -8,11 +8,13 @@ import { createQuotaCommand } from "./commands/quota.js";
 import { createGeosCommand } from "./commands/geos.js";
 import { createSkusCommand } from "./commands/skus.js";
 import { createSuggestCommand } from "./commands/suggest.js";
-import { createUpdateCommand } from "./commands/update.js";
+import { createUpdateCommand, runUpdateFlow } from "./commands/update.js";
 import { configureHelp } from "./core/help.js";
 import { c, colorEnabled } from "./core/color.js";
 import { looksLikeSku, normalizeSku } from "./core/sku.js";
-import { maybePrintUpdateBanner } from "./core/updateCheck.js";
+import { maybePrintUpdateBanner, shouldSkipAutomaticBanner } from "./core/updateCheck.js";
+import { exitWithError } from "./core/errors.js";
+import { isNonInteractiveMode } from "./core/runtime.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { version: string };
@@ -36,7 +38,7 @@ function splash(version: string): string {
     azw where                 Current Azure subscription / user
     azw geos                  Discover what --geography values your sub sees
     azw skus --eu --family B  Discover VM SKU names (family, vCPU, RAM)
-    azw update                Check for a newer release + install commands
+    azw update                Check for a newer release + ask before installing
 
   ${colorEnabled() ? c.bold("Global flags:") : "Global flags:"}
     --json                    Machine-readable JSON output (most verbs)
@@ -98,13 +100,32 @@ const argv = rewritePositionalSku(
   process.argv.filter((a) => a !== "--no-update-check"),
   verbs,
 );
+const isBareInvocation = argv.length <= 2;
+const isUpdateInvocation = argv[2] === "update";
 
-// Run the command first, then fire the update banner on stderr. Ordering
-// matters: doing it post-parse means a slow network can't delay the user's
-// actual output, and routing to stderr keeps stdout pipelines clean.
+// Run the command first, then do the courtesy update check. Ordering matters:
+// doing it post-parse means a slow network can't delay the user's actual
+// output, and scripted commands still only get the passive stderr banner.
 program
   .parseAsync(argv)
-  .then(() => maybePrintUpdateBanner(pkg.version))
+  .then(async () => {
+    if (isUpdateInvocation) return;
+    if (isBareInvocation) {
+      if (!shouldSkipAutomaticBanner() && !isNonInteractiveMode()) {
+        try {
+          await runUpdateFlow(pkg.version, {
+            promptInstall: true,
+            quietOnFailure: true,
+            quietWhenCurrent: true,
+          });
+        } catch (err) {
+          exitWithError(err);
+        }
+      }
+      return;
+    }
+    await maybePrintUpdateBanner(pkg.version);
+  })
   .catch(() => {
     // parseAsync has already handled/exited on command errors; swallow any
     // stray rejection so the banner path doesn't turn into an unhandled
