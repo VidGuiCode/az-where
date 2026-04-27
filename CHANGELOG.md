@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2
+
+### Fixes
+
+- Bare `azw` now prints the post-help update banner instead of exiting before the update check can run.
+- `azw update` now forces a fresh GitHub release check instead of trusting a still-fresh 24h cache.
+
 ## 0.2.1
 
 ### UX

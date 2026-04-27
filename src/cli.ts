@@ -74,7 +74,7 @@ program
   .helpCommand(true)
   .action(() => {
     process.stdout.write(splash(pkg.version) + "\n");
-    program.help();
+    program.outputHelp();
   });
 
 program.addCommand(createWhereCommand());

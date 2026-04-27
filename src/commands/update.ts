@@ -25,7 +25,7 @@ export function createUpdateCommand(
         const spinner = new Spinner("Checking latest release", 2);
         let status: Awaited<ReturnType<typeof checkForUpdate>>;
         try {
-          status = await checkForUpdate(currentVersion);
+          status = await checkForUpdate(currentVersion, { forceRefresh: true });
         } finally {
           spinner.done();
         }

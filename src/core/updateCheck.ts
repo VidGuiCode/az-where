@@ -39,6 +39,10 @@ export interface UpdateStatus {
   behind: boolean;
 }
 
+export interface CheckForUpdateOptions {
+  forceRefresh?: boolean;
+}
+
 /**
  * Passive-banner suppression. Only consulted by `maybePrintUpdateBanner`.
  * `checkForUpdate` itself never bails here — if a user explicitly runs
@@ -157,7 +161,10 @@ export function normalizeTag(tag: string): string {
  * missing), tries the network once with a 1.5s budget and refreshes the
  * cache on success. Always returns — never throws.
  */
-export async function checkForUpdate(currentVersion: string): Promise<UpdateStatus> {
+export async function checkForUpdate(
+  currentVersion: string,
+  opts: CheckForUpdateOptions = {},
+): Promise<UpdateStatus> {
   const status: UpdateStatus = {
     currentVersion: normalizeTag(currentVersion),
     latestVersion: null,
@@ -165,7 +172,7 @@ export async function checkForUpdate(currentVersion: string): Promise<UpdateStat
   };
 
   const cached = await readCache();
-  let latestTag = isFresh(cached) ? cached?.latestTag ?? null : null;
+  let latestTag = !opts.forceRefresh && isFresh(cached) ? cached?.latestTag ?? null : null;
 
   if (!latestTag) {
     const fetched = await fetchLatestTag(currentVersion);
