@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+### Diagnostics
+
+- Parse ARM error responses into typed errors with HTTP status, endpoint, ARM code, and ARM message.
+- Improve human hints for ARM auth/permission failures and throttling.
+- Expand JSON error details for ARM failures without changing exit-code contracts.
+
 ## 0.3.0
 
 ### Performance

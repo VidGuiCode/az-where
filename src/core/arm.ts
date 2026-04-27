@@ -1,5 +1,6 @@
 import { az } from "./az.js";
 import { isArmCacheablePath, readArmCache, writeArmCache } from "./cache.js";
+import { ArmHttpError } from "./errors.js";
 
 /**
  * Hit ARM directly with a single bearer token instead of shelling out to `az`
@@ -93,7 +94,15 @@ async function fetchWithRetry(
       }
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        throw new Error(`ARM ${res.status} ${res.statusText}: ${body.slice(0, 200)}`);
+        const parsed = parseArmErrorBody(body);
+        throw new ArmHttpError(
+          res.status,
+          res.statusText,
+          endpointForUrl(url),
+          parsed.code,
+          parsed.message,
+          body.slice(0, 500),
+        );
       }
       return res;
     } catch (err) {
@@ -104,6 +113,34 @@ async function fetchWithRetry(
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error("ARM request failed");
+}
+
+export function parseArmErrorBody(body: string): { code: string | null; message: string | null } {
+  try {
+    const parsed = JSON.parse(body) as {
+      error?: { code?: unknown; message?: unknown };
+      code?: unknown;
+      message?: unknown;
+    };
+    const code = typeof parsed.error?.code === "string" ? parsed.error.code : parsed.code;
+    const message =
+      typeof parsed.error?.message === "string" ? parsed.error.message : parsed.message;
+    return {
+      code: typeof code === "string" ? code : null,
+      message: typeof message === "string" ? message : null,
+    };
+  } catch {
+    return { code: null, message: null };
+  }
+}
+
+function endpointForUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname;
+  } catch {
+    return url;
+  }
 }
 
 function isRetryable(err: unknown): boolean {

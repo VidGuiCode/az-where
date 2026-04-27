@@ -45,11 +45,30 @@ export class AzNotInstalledError extends AzCliError {
   }
 }
 
+export class ArmHttpError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    public readonly statusText: string,
+    public readonly endpoint: string,
+    public readonly armCode: string | null,
+    public readonly armMessage: string | null,
+    public readonly bodySnippet: string,
+  ) {
+    super(
+      armCode && armMessage
+        ? `ARM ${statusCode} ${statusText}: ${armCode} - ${armMessage}`
+        : `ARM ${statusCode} ${statusText}`,
+    );
+    this.name = "ArmHttpError";
+  }
+}
+
 export function getExitCode(error: unknown): number {
   if (error instanceof AzNotInstalledError) return 127;
   if (error instanceof AzNotLoggedInError) return 2;
   if (error instanceof ValidationError || error instanceof NonInteractiveError) return 3;
   if (error instanceof AzCliError) return 1;
+  if (error instanceof ArmHttpError) return 1;
   return 1;
 }
 
@@ -62,6 +81,15 @@ export function getErrorMessage(error: unknown): string {
   }
   if (error instanceof AzCliError) {
     return `${error.message}\n  Hint: 'az' returned exit code ${error.exitCode}. Try running the command manually: ${error.command}`;
+  }
+  if (error instanceof ArmHttpError) {
+    if (error.statusCode === 401 || error.statusCode === 403) {
+      return `${error.message}\n  Hint: ARM rejected the current Azure CLI token or subscription permissions. Check 'az account show' and your role assignments.`;
+    }
+    if (error.statusCode === 429) {
+      return `${error.message}\n  Hint: ARM throttled the request. Retry in a moment or lower --concurrency.`;
+    }
+    return `${error.message}\n  Hint: ARM request failed while reading ${error.endpoint}. Retry with --refresh if cached data may be stale.`;
   }
   if (error instanceof Error) return error.message;
   return String(error);

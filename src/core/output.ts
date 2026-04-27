@@ -1,4 +1,4 @@
-import { AzCliError } from "./errors.js";
+import { ArmHttpError, AzCliError } from "./errors.js";
 import { isCompactMode } from "./runtime.js";
 import { c, colorEnabled, padVisible, visibleLength } from "./color.js";
 import { shortGeo } from "./geo.js";
@@ -31,6 +31,20 @@ export function printErrorJson(error: unknown): void {
             command: error.command,
           },
         }
+      : error instanceof ArmHttpError
+        ? {
+            status: "error",
+            code: "ARM_HTTP_ERROR",
+            message: error.message,
+            details: {
+              statusCode: error.statusCode,
+              statusText: error.statusText,
+              endpoint: error.endpoint,
+              armCode: error.armCode,
+              armMessage: error.armMessage,
+              body: error.bodySnippet,
+            },
+          }
       : error instanceof Error
         ? {
             status: "error",
