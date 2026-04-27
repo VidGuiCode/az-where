@@ -36,7 +36,7 @@ describe("CLI smoke tests", () => {
 
   it("lists all top-level commands", () => {
     const output = run(["--help"]);
-    for (const cmd of ["where", "regions", "pick", "quota", "geos", "skus", "update"]) {
+    for (const cmd of ["where", "regions", "pick", "quota", "geos", "skus", "suggest", "update"]) {
       expect(output).toContain(cmd);
     }
   });
@@ -77,6 +77,13 @@ describe("CLI smoke tests", () => {
     expect(output).toContain("pick");
     expect(output).toContain("--eu");
     expect(output).toContain("--refresh");
+  });
+
+  it("suggest command exists and has near/json flags", () => {
+    const output = run(["suggest", "--help"]);
+    expect(output).toContain("suggest");
+    expect(output).toContain("--near");
+    expect(output).toContain("--json");
   });
 
   it("skus and geos expose --refresh", () => {

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2
+
+### Recommendation
+
+- Add `azw suggest <sku>` for a human-friendly region recommendation with a short reason.
+- Add `--near <city>` support backed by a built-in coordinate table, with no new runtime dependency.
+- Keep `pick` script-first while `suggest --json` exposes recommendation score and factors.
+
 ## 0.3.1
 
 ### Diagnostics
