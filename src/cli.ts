@@ -8,6 +8,8 @@ import { createQuotaCommand } from "./commands/quota.js";
 import { createGeosCommand } from "./commands/geos.js";
 import { createSkusCommand } from "./commands/skus.js";
 import { createSuggestCommand } from "./commands/suggest.js";
+import { createAvailableCommand } from "./commands/available.js";
+import { createPriceCommand } from "./commands/price.js";
 import { createUpdateCommand, runUpdateFlow } from "./commands/update.js";
 import { configureHelp } from "./core/help.js";
 import { c, colorEnabled } from "./core/color.js";
@@ -35,6 +37,9 @@ function splash(version: string): string {
     azw pick B1s --eu         One region name (for terraform / scripts)
     azw quota D2s_v5          vCPU headroom, sorted by free capacity
     azw suggest B1s --eu      Recommended region with a short reason
+    azw available --family B  Deployable VM SKUs in a family
+    azw price B2ats_v2 --region swedencentral
+                              Estimated retail compute price
     azw where                 Current Azure subscription / user
     azw geos                  Discover what --geography values your sub sees
     azw skus --eu --family B  Discover VM SKU names (family, vCPU, RAM)
@@ -88,6 +93,8 @@ program.addCommand(createQuotaCommand());
 program.addCommand(createGeosCommand());
 program.addCommand(createSkusCommand());
 program.addCommand(createSuggestCommand());
+program.addCommand(createAvailableCommand());
+program.addCommand(createPriceCommand());
 program.addCommand(createUpdateCommand(pkg.version));
 
 configureHelp(program);

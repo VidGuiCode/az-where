@@ -69,6 +69,18 @@ Planned improvements and features for upcoming releases. This is a living docume
 - `POLICY_DENIED` verdicts so `pick` and `suggest` do not return policy-blocked regions.
 - `--no-policy` escape hatch and policy metadata in JSON output.
 
+### 0.3.6 - Deployable Family Search
+
+- `azw available --family <prefix>` for finding deployable VM SKUs in a family.
+- Default output shows only SKUs/regions that pass policy, SKU restrictions, and live quota.
+- `--all` exposes blocked candidates and quota checks now require enough free vCPUs for the selected SKU.
+
+### 0.3.7 - Pricing
+
+- `azw price <sku> --region <name>` for retail compute price estimates.
+- `azw available --price` to compare deployable family options with hourly and monthly estimates.
+- Pricing remains optional enrichment and never changes deployability verdicts.
+
 ## Planned
 
 ### 0.4.0 - Multi-SKU Comparison

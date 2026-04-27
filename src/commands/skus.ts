@@ -6,6 +6,7 @@ import { printInfo, printJson, printTable } from "../core/output.js";
 import { Spinner } from "../core/progress.js";
 import { c, colorEnabled } from "../core/color.js";
 import { armCacheSummary } from "../core/cache.js";
+import { skuMatchesFamilyPrefix, skuMemoryGiB, skuVcpus } from "../core/sku.js";
 import type { AzVmSku } from "../core/types.js";
 
 /**
@@ -108,8 +109,8 @@ export function createSkusCommand(): Command {
           const entry = byName.get(s.name) ?? {
             name: s.name,
             family: s.family ?? "",
-            vcpu: capability(s, "vCPUs"),
-            memGiB: capability(s, "MemoryGB"),
+            vcpu: skuVcpus(s),
+            memGiB: skuMemoryGiB(s),
             regions: new Set<string>(),
             geos: new Set<string>(),
           };
@@ -123,9 +124,7 @@ export function createSkusCommand(): Command {
 
         let rows = [...byName.values()];
         if (opts.family) {
-          const letter = String(opts.family).trim();
-          const re = new RegExp(`^Standard_${escapeRegex(letter)}`, "i");
-          rows = rows.filter((r) => re.test(r.name));
+          rows = rows.filter((r) => skuMatchesFamilyPrefix(r.name, String(opts.family)));
         }
 
         // Sort by family, then vCPU count, then name — groups related SKUs
@@ -213,8 +212,7 @@ async function runSingleRegion(
 
   let vms = skus.filter((s) => s.resourceType === "virtualMachines");
   if (opts.family) {
-    const re = new RegExp(`^Standard_${escapeRegex(String(opts.family).trim())}`, "i");
-    vms = vms.filter((s) => re.test(s.name));
+    vms = vms.filter((s) => skuMatchesFamilyPrefix(s.name, String(opts.family)));
   }
 
   // Dedupe by name — ARM can return the same SKU multiple times per region
@@ -226,8 +224,8 @@ async function runSingleRegion(
     .map((s) => ({
       name: s.name,
       family: s.family ?? "",
-      vcpu: capability(s, "vCPUs"),
-      memGiB: capability(s, "MemoryGB"),
+      vcpu: skuVcpus(s),
+      memGiB: skuMemoryGiB(s),
     }))
     .sort((a, b) => {
       const f = a.family.localeCompare(b.family);
@@ -289,15 +287,4 @@ function formatRegions(regions: Set<string>, totalInScope: number): string {
   const cap = 4;
   if (sorted.length <= cap) return sorted.join(", ");
   return `${sorted.slice(0, cap).join(", ")} +${sorted.length - cap} more`;
-}
-
-function capability(sku: AzVmSku, name: string): number | null {
-  const cap = sku.capabilities?.find((c) => c.name === name);
-  if (!cap) return null;
-  const n = Number(cap.value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

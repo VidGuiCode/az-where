@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.7
+
+### Pricing
+
+- Add `azw price <sku> --region <region>` for estimated Azure retail compute pricing.
+- Add `--price`, `--currency`, and `--os` to `azw available` so deployable family results can include hourly and monthly estimates.
+- Add `--sort price` to put the cheapest deployable family options first.
+- Pricing uses the public Azure Retail Prices API and is explicitly compute-only; disks, bandwidth, taxes, credits, and discounts are not included.
+
+## 0.3.6
+
+### Deployable Family Search
+
+- Add `azw available --family <prefix>` to list VM SKUs that can actually deploy under Azure Policy, SKU restrictions, and live quota.
+- Keep `azw skus --family` as discovery-only, while `available` filters to usable options by default and exposes blocked reasons with `--all`.
+- Tighten quota checks so a SKU is deployable only when free family vCPU quota covers that SKU's vCPU requirement.
+
 ## 0.3.5
 
 ### Policy Accuracy

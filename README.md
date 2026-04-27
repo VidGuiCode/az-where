@@ -4,7 +4,7 @@
 
 **Where in Azure can I actually deploy this VM size?**
 
-[![Release](https://img.shields.io/badge/release-v0.3.5-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
+[![Release](https://img.shields.io/badge/release-v0.3.7-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6?logo=typescript&logoColor=white)](tsconfig.json)
@@ -30,7 +30,7 @@ az login
 Install the current release:
 
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.3.5/az-where-0.3.5.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.3.7/az-where-0.3.7.tgz
 ```
 
 Or build from source:
@@ -60,9 +60,12 @@ Two binaries are installed: `azw` and `az-where`. They are the same tool.
 | Check only Europe / US / Asia Pacific | `azw B1s --eu` / `--us` / `--asia` |
 | Print one deployable region | `azw pick B1s` |
 | Get a recommended region with a reason | `azw suggest B1s --eu --near Luxembourg` |
+| Find deployable SKUs in a family | `azw available --family B --eu` |
+| Compare deployable family options with price | `azw available --family B --eu --price --currency EUR --sort price` |
+| Price one VM size in one region | `azw price B2ats_v2 --region swedencentral --currency EUR` |
 | Sort deployable regions by quota headroom | `azw quota B1s` |
 | List geography groups your subscription sees | `azw geos` |
-| Discover VM SKU names | `azw skus --eu --family B` |
+| Discover VM SKU names, even if not deployable | `azw skus --eu --family B` |
 | Show current Azure identity/subscription | `azw where` |
 | Check/install a newer release | `azw update` |
 
@@ -88,6 +91,9 @@ During scans, stderr shows progress immediately, including the initial Azure tok
 azw regions <sku>       # full availability table; also used by `azw B1s`
 azw pick <sku>          # one deployable region name for scripts
 azw suggest <sku>       # recommended region with a short explanation
+azw available --family B # deployable VM SKUs in a family
+azw price <sku> --region <name>
+                         # estimated retail compute price
 azw quota <sku>         # quota-focused view, sorted by free vCPUs
 azw skus                # discover VM SKU names
 azw geos                # list Azure geographyGroup values
@@ -104,6 +110,10 @@ Run `azw <command> --help` for command-specific flags.
 | `--eu`, `--us`, `--asia` | Filter to common geography groups |
 | `--geography <group>` | Filter to any exact Azure `geographyGroup` |
 | `--concurrency <n>` | Parallel ARM requests during scans, default `16` |
+| `--refresh` | Bypass cached location/SKU data |
+| `--price` | Add Azure retail compute estimates to `available` |
+| `--currency <code>` | Currency for pricing, e.g. `USD` or `EUR` |
+| `--os <linux\|windows>` | OS pricing lens for VM compute rates |
 | `--json` | Structured JSON output; progress stays off |
 | `--compact` | One-line JSON for scripts and agents |
 | `--name` | Region names only, for `regions` / `pick` |
@@ -140,6 +150,8 @@ The main read-only ARM calls are:
 - `GET /subscriptions/{id}/providers/Microsoft.Compute/locations/{region}/usages`
 
 Location and SKU responses are cached briefly for faster repeated scans. Policy and quota/usage responses are always live so deployability decisions do not use stale restrictions or quota.
+
+Pricing uses the public Azure Retail Prices API. It is an estimate for VM compute only; disks, bandwidth, taxes, credits, reservations, savings plans, and account-specific discounts are not included.
 
 ## Scripting
 

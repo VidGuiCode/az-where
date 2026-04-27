@@ -1,6 +1,7 @@
 import { armList, getToken } from "./arm.js";
 import type { PolicyCheck } from "./policy.js";
 import { Progress } from "./progress.js";
+import { isSkuBlockedForSubscription, skuVcpus } from "./sku.js";
 import type { AzLocation, AzVmSku, AzVmUsage, RegionVerdict } from "./types.js";
 
 export interface ScanOptions {
@@ -111,10 +112,7 @@ async function scanOne(
     return { ...base, skuOffered: false, verdict: "SKU_NOT_OFFERED" };
   }
 
-  const restricted = (vmSku.restrictions ?? []).some(
-    (r) => r.reasonCode === "NotAvailableForSubscription",
-  );
-  if (restricted) {
+  if (isSkuBlockedForSubscription(vmSku)) {
     return {
       ...base,
       skuOffered: false,
@@ -135,6 +133,7 @@ async function scanOne(
   }
 
   const free = usage.limit - usage.currentValue;
+  const requiredVcpus = skuVcpus(vmSku) ?? 1;
   return {
     ...base,
     skuOffered: true,
@@ -142,7 +141,7 @@ async function scanOne(
     used: usage.currentValue,
     limit: usage.limit,
     free,
-    verdict: free >= 1 ? "AVAILABLE" : "FULL",
+    verdict: free >= requiredVcpus ? "AVAILABLE" : "FULL",
   };
 }
 

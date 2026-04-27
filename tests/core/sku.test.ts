@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { looksLikeSku, normalizeSku } from "../../src/core/sku.js";
+import {
+  isSkuBlockedForSubscription,
+  looksLikeSku,
+  normalizeSku,
+  skuMatchesFamilyPrefix,
+  skuMemoryGiB,
+  skuVcpus,
+} from "../../src/core/sku.js";
 
 describe("normalizeSku", () => {
   it("prepends Standard_ to bare sizes", () => {
@@ -43,5 +50,35 @@ describe("looksLikeSku", () => {
     expect(looksLikeSku("--sku")).toBe(false);
     expect(looksLikeSku("-j")).toBe(false);
     expect(looksLikeSku("")).toBe(false);
+  });
+});
+
+describe("SKU helpers", () => {
+  const sku = {
+    name: "Standard_B2ats_v2",
+    capabilities: [
+      { name: "vCPUs", value: "2" },
+      { name: "MemoryGB", value: "1" },
+    ],
+  };
+
+  it("matches family prefixes", () => {
+    expect(skuMatchesFamilyPrefix("Standard_B2ats_v2", "B")).toBe(true);
+    expect(skuMatchesFamilyPrefix("Standard_B2ats_v2", "B2a")).toBe(true);
+    expect(skuMatchesFamilyPrefix("Standard_D2s_v5", "B")).toBe(false);
+  });
+
+  it("parses vCPU and memory capabilities", () => {
+    expect(skuVcpus(sku)).toBe(2);
+    expect(skuMemoryGiB(sku)).toBe(1);
+  });
+
+  it("detects subscription restrictions", () => {
+    expect(
+      isSkuBlockedForSubscription({
+        name: "Standard_B1s",
+        restrictions: [{ reasonCode: "NotAvailableForSubscription" }],
+      }),
+    ).toBe(true);
   });
 });

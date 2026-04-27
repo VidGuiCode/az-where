@@ -8,6 +8,7 @@ Two boundaries talk to Azure:
 
 - **Azure CLI (`az`)**: used for account context and `az account get-access-token`.
 - **ARM REST (`fetch`)**: used for locations, policy assignments, Compute SKU lists, and per-region usage/quota.
+- **Azure Retail Prices API (`fetch`)**: used for optional unauthenticated compute price estimates.
 
 The tool never creates, modifies, or deletes Azure resources.
 
@@ -30,6 +31,8 @@ The tool never creates, modifies, or deletes Azure resources.
 | `regions.ts` | `azw regions <sku>` - full availability table |
 | `pick.ts` | `azw pick <sku>` - one region name for scripts |
 | `suggest.ts` | `azw suggest <sku>` - recommended region with a short reason |
+| `available.ts` | `azw available --family <prefix>` - deployable VM SKUs in a family |
+| `price.ts` | `azw price <sku> --region <name>` - retail compute price estimate |
 | `quota.ts` | `azw quota <sku>` - quota-focused view sorted by free vCPUs |
 | `geos.ts` | `azw geos` - geography groups visible to the subscription |
 | `skus.ts` | `azw skus` - VM SKU discovery |
@@ -45,13 +48,18 @@ Command handlers stay thin: parse flags, call core helpers, print output.
 
 `src/core/policy.ts` reads subscription policy assignments and extracts enforced allowed-location lists.
 
-`src/core/scan.ts` scans regions in parallel. For each region it:
+`src/core/scan.ts` scans regions in parallel for one SKU. For each region it:
 
 1. Applies Azure Policy allowed-location restrictions when enabled.
 2. Reads location-filtered Compute SKUs.
 3. Checks whether the target VM SKU exists.
 4. Checks `NotAvailableForSubscription` restrictions.
 5. Reads live usage/quota for the SKU family only when the SKU is offered and allowed.
+6. Requires free family vCPU quota to cover the SKU's vCPU requirement.
+
+`src/core/available.ts` powers `azw available`. It scans each candidate region once, reads matching family SKUs from the location-filtered Compute SKU endpoint, checks live quota per region, then groups deployable results by SKU.
+
+`src/core/pricing.ts` reads the public Azure Retail Prices API for optional compute-only estimates. Pricing never changes deployability verdicts; it only enriches `price` and `available --price` output.
 
 Quota/usage is intentionally never cached.
 
@@ -59,7 +67,7 @@ Quota/usage is intentionally never cached.
 
 | Verdict | Meaning |
 |---|---|
-| `AVAILABLE` | SKU offered, subscription allowed, quota `>= 1` |
+| `AVAILABLE` | SKU offered, subscription allowed, quota covers the SKU's vCPU requirement |
 | `QUOTA_UNKNOWN` | SKU offered, but usage/quota could not be matched |
 | `FULL` | SKU offered and allowed, but quota exhausted |
 | `BLOCKED_FOR_SUB` | SKU offered, but this subscription is blocked in that region |
@@ -78,7 +86,7 @@ Quota/usage is intentionally never cached.
 
 `--refresh` bypasses cached ARM data. Usage/quota endpoints are never cached so deployability decisions do not use stale quota.
 
-Policy assignments are not cached in v0.3.5. Policy remains live because it can directly decide whether `pick` may safely return a region for Terraform or scripts.
+Policy assignments are not cached. Policy remains live because it can directly decide whether `pick`, `suggest`, or `available` may safely report a deployable target.
 
 ## Suggestion
 

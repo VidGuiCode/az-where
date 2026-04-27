@@ -36,7 +36,18 @@ describe("CLI smoke tests", () => {
 
   it("lists all top-level commands", () => {
     const output = run(["--help"]);
-    for (const cmd of ["where", "regions", "pick", "quota", "geos", "skus", "suggest", "update"]) {
+    for (const cmd of [
+      "where",
+      "regions",
+      "pick",
+      "quota",
+      "geos",
+      "skus",
+      "suggest",
+      "available",
+      "price",
+      "update",
+    ]) {
       expect(output).toContain(cmd);
     }
   });
@@ -87,6 +98,30 @@ describe("CLI smoke tests", () => {
     expect(output).toContain("suggest");
     expect(output).toContain("--near");
     expect(output).toContain("--no-policy");
+    expect(output).toContain("--json");
+  });
+
+  it("available command exists and has deployability filters", () => {
+    const output = run(["available", "--help"]);
+    expect(output).toContain("available");
+    expect(output).toContain("--family");
+    expect(output).toContain("--region");
+    expect(output).toContain("--all");
+    expect(output).toContain("--price");
+    expect(output).toContain("--currency");
+    expect(output).toContain("--sort");
+    expect(output).toContain("--no-policy");
+    expect(output).toContain("--refresh");
+    expect(output).toContain("--json");
+  });
+
+  it("price command exists and has pricing flags", () => {
+    const output = run(["price", "--help"]);
+    expect(output).toContain("price");
+    expect(output).toContain("--region");
+    expect(output).toContain("--currency");
+    expect(output).toContain("--os");
+    expect(output).toContain("--hours");
     expect(output).toContain("--json");
   });
 

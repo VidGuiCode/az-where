@@ -45,17 +45,17 @@ export function printErrorJson(error: unknown): void {
               body: error.bodySnippet,
             },
           }
-      : error instanceof Error
-        ? {
-            status: "error",
-            code: error.name,
-            message: error.message,
-          }
-        : {
-            status: "error",
-            code: "UNKNOWN_ERROR",
-            message: String(error),
-          };
+        : error instanceof Error
+          ? {
+              status: "error",
+              code: error.name,
+              message: error.message,
+            }
+          : {
+              status: "error",
+              code: "UNKNOWN_ERROR",
+              message: String(error),
+            };
   console.error(JSON.stringify(errorObj, null, 2));
 }
 
@@ -110,7 +110,7 @@ function quotaCell(row: RegionVerdict): string {
   }
   const label = `${row.free}/${row.limit} free`;
   if (!colorEnabled()) return label;
-  return row.free >= 1 ? c.green(label) : c.red(label);
+  return row.verdict === "AVAILABLE" ? c.green(label) : c.red(label);
 }
 
 function offeredCell(offered: boolean): string {

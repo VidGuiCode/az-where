@@ -32,3 +32,38 @@ export function looksLikeSku(token: string): boolean {
   // VM sizes always have at least one digit; plain words like `regions` don't.
   return /\d/.test(token);
 }
+
+export interface SkuLike {
+  name: string;
+  capabilities?: Array<{ name: string; value: string }>;
+  restrictions?: Array<{ reasonCode?: string }>;
+}
+
+export function skuCapability(sku: SkuLike, name: string): number | null {
+  const cap = sku.capabilities?.find((c) => c.name === name);
+  if (!cap) return null;
+  const n = Number(cap.value);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function skuVcpus(sku: SkuLike): number | null {
+  return skuCapability(sku, "vCPUs");
+}
+
+export function skuMemoryGiB(sku: SkuLike): number | null {
+  return skuCapability(sku, "MemoryGB");
+}
+
+export function skuMatchesFamilyPrefix(skuName: string, familyPrefix: string): boolean {
+  const prefix = familyPrefix.trim();
+  if (!prefix) return false;
+  return new RegExp(`^Standard_${escapeRegex(prefix)}`, "i").test(skuName);
+}
+
+export function isSkuBlockedForSubscription(sku: SkuLike): boolean {
+  return (sku.restrictions ?? []).some((r) => r.reasonCode === "NotAvailableForSubscription");
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
