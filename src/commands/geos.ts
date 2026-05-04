@@ -3,14 +3,22 @@ import { exitWithError } from "../core/errors.js";
 import { printInfo, printJson, printTable } from "../core/output.js";
 import { listLocations } from "../core/geo.js";
 import { armCacheSummary } from "../core/cache.js";
+import {
+  addJsonCompatibilityOptions,
+  addOutputOption,
+  isJsonOutput,
+  resolveOutputMode,
+} from "../core/outputMode.js";
 
 export function createGeosCommand(): Command {
-  return new Command("geos")
+  const cmd = new Command("geos")
     .description("List geographyGroup values your subscription sees (used for --geography).")
     .option("--refresh", "Bypass cached ARM location data")
-    .option("--json", "Machine-readable JSON output")
     .action(async (opts) => {
+      let jsonErrors = Boolean(opts.json);
       try {
+        const mode = resolveOutputMode(opts);
+        jsonErrors = isJsonOutput(mode);
         const locations = await listLocations({
           progressLabel: "Fetching Azure regions",
           etaSeconds: 5,
@@ -24,7 +32,7 @@ export function createGeosCommand(): Command {
 
         const entries = [...groups.entries()].sort((a, b) => b[1] - a[1]);
 
-        if (opts.json) {
+        if (isJsonOutput(mode)) {
           printJson({
             schemaVersion: 1,
             kind: "geos",
@@ -42,7 +50,9 @@ export function createGeosCommand(): Command {
         printInfo("");
         printInfo("Use any of these with --geography, or the shortcuts --eu / --us / --asia.");
       } catch (err) {
-        exitWithError(err, Boolean(opts.json));
+        exitWithError(err, jsonErrors);
       }
     });
+  addOutputOption(addJsonCompatibilityOptions(cmd, "Machine-readable JSON output"));
+  return cmd;
 }

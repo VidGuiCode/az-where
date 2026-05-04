@@ -7,9 +7,15 @@ import { normalizeSku } from "../core/sku.js";
 import { c, colorEnabled } from "../core/color.js";
 import { armCacheSummary } from "../core/cache.js";
 import { loadPolicyCheck, type PolicySummary } from "../core/policy.js";
+import {
+  addJsonCompatibilityOptions,
+  addOutputOption,
+  isJsonOutput,
+  resolveOutputMode,
+} from "../core/outputMode.js";
 
 export function createQuotaCommand(): Command {
-  return new Command("quota")
+  const cmd = new Command("quota")
     .description(
       "vCPU headroom lens: only regions where the SKU is actually offered. Use `regions` for the full availability picture.",
     )
@@ -23,9 +29,11 @@ export function createQuotaCommand(): Command {
     .option("--all", "Also include regions where the SKU isn't offered or your sub is blocked")
     .option("--no-policy", "Skip Azure Policy allowed-location checks")
     .option("--refresh", "Bypass cached ARM location/SKU data")
-    .option("--json", "Machine-readable JSON output")
     .action(async (positional: string | undefined, opts) => {
+      let jsonErrors = Boolean(opts.json);
       try {
+        const mode = resolveOutputMode(opts);
+        jsonErrors = isJsonOutput(mode);
         const rawSku = opts.sku ?? positional;
         if (!rawSku) throw new ValidationError("Missing SKU. Try: azw quota B1s --eu");
         const sku = normalizeSku(rawSku);
@@ -72,7 +80,7 @@ export function createQuotaCommand(): Command {
         const dropped = sorted.length - rows.length;
         const deployable = rows.some((r) => r.verdict === "AVAILABLE");
 
-        if (opts.json) {
+        if (isJsonOutput(mode)) {
           printJson({
             schemaVersion: 1,
             kind: "quota",
@@ -103,9 +111,11 @@ export function createQuotaCommand(): Command {
         printFooter(sorted, elapsedMs, sku);
         if (!deployable) process.exit(1);
       } catch (err) {
-        exitWithError(err, Boolean(opts.json));
+        exitWithError(err, jsonErrors);
       }
     });
+  addOutputOption(addJsonCompatibilityOptions(cmd, "Machine-readable JSON output"));
+  return cmd;
 }
 
 function printPolicyWarning(policy: PolicySummary): void {

@@ -3,9 +3,15 @@ import { exitWithError, ValidationError } from "../core/errors.js";
 import { formatMoney, getVmPrice, normalizeCurrency, type VmPriceOs } from "../core/pricing.js";
 import { normalizeSku } from "../core/sku.js";
 import { printInfo, printJson } from "../core/output.js";
+import {
+  addJsonCompatibilityOptions,
+  addOutputOption,
+  isJsonOutput,
+  resolveOutputMode,
+} from "../core/outputMode.js";
 
 export function createPriceCommand(): Command {
-  return new Command("price")
+  const cmd = new Command("price")
     .description("Show estimated retail compute price for one VM SKU in one region.")
     .argument("[sku]", "VM SKU (e.g. B2ats_v2, Standard_B2ats_v2)")
     .option("--sku <sku>", "VM SKU (alternative to positional)")
@@ -13,9 +19,11 @@ export function createPriceCommand(): Command {
     .option("--currency <code>", "3-letter currency code", "USD")
     .option("--os <linux|windows>", "Operating system price lens", "linux")
     .option("--hours <n>", "Monthly estimate hours", "730")
-    .option("--json", "Machine-readable JSON output")
     .action(async (positional: string | undefined, opts) => {
+      let jsonErrors = Boolean(opts.json);
       try {
+        const mode = resolveOutputMode(opts);
+        jsonErrors = isJsonOutput(mode);
         const rawSku = opts.sku ?? positional;
         if (!rawSku) {
           throw new ValidationError(
@@ -31,7 +39,7 @@ export function createPriceCommand(): Command {
         const hours = parseHours(opts.hours);
         const price = await getVmPrice(sku, region, { currency, os, hoursPerMonth: hours });
 
-        if (opts.json) {
+        if (isJsonOutput(mode)) {
           printJson({
             schemaVersion: 1,
             kind: "price",
@@ -62,9 +70,11 @@ export function createPriceCommand(): Command {
           "Estimate is compute retail price only; disks, bandwidth, taxes, credits, and discounts are not included.",
         );
       } catch (err) {
-        exitWithError(err, Boolean(opts.json));
+        exitWithError(err, jsonErrors);
       }
     });
+  addOutputOption(addJsonCompatibilityOptions(cmd, "Machine-readable JSON output"));
+  return cmd;
 }
 
 function parseOs(input: string): VmPriceOs {

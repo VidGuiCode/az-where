@@ -78,6 +78,11 @@ describe("shouldSkipUpdateCheck", () => {
     expect(shouldSkipUpdateCheck()).toBe(true);
   });
 
+  it("skips under -o machine-readable modes", () => {
+    process.argv.push("-o", "json");
+    expect(shouldSkipUpdateCheck()).toBe(true);
+  });
+
   it("skips under --no-update-check", () => {
     process.argv.push("--no-update-check");
     expect(shouldSkipUpdateCheck()).toBe(true);

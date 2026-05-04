@@ -7,31 +7,39 @@ import { Spinner } from "../core/progress.js";
 import { confirm } from "../core/prompt.js";
 import { isNonInteractiveMode } from "../core/runtime.js";
 import { installCommands, installRelease } from "../core/updateInstall.js";
+import {
+  addJsonCompatibilityOptions,
+  addOutputOption,
+  isJsonOutput,
+  resolveOutputMode,
+} from "../core/outputMode.js";
 
 /**
- * `azw update` — discoverable surface for the version banner. It checks the
+ * `azw update` - discoverable surface for the version banner. It checks the
  * latest published tag and, in an interactive terminal, asks before running
  * the npm global install command. JSON/non-interactive modes stay read-only.
  */
-export function createUpdateCommand(
-  currentVersion: string,
-): Command {
-  return new Command("update")
+export function createUpdateCommand(currentVersion: string): Command {
+  const cmd = new Command("update")
     .description("Check for a newer az-where release and ask before installing it.")
-    .option("--json", "Machine-readable JSON output")
-    .option("--no-update-check", "(ignored here — this command *is* the update check)")
+    .option("--no-update-check", "(ignored here - this command is the update check)")
     .action(async (opts) => {
+      let jsonErrors = Boolean(opts.json);
       try {
+        const mode = resolveOutputMode(opts);
+        jsonErrors = isJsonOutput(mode);
         await runUpdateFlow(currentVersion, {
           forceRefresh: true,
-          json: Boolean(opts.json),
+          json: isJsonOutput(mode),
           promptInstall: true,
           quietWhenCurrent: false,
         });
       } catch (err) {
-        exitWithError(err, Boolean(opts.json));
+        exitWithError(err, jsonErrors);
       }
     });
+  addOutputOption(addJsonCompatibilityOptions(cmd, "Machine-readable JSON output"));
+  return cmd;
 }
 
 export async function runUpdateFlow(
@@ -83,28 +91,30 @@ export async function runUpdateFlow(
     return;
   }
 
-  const latestVersion = normalizeTag(latest);
-  const header = `Update available: ${current} -> ${latestVersion}`;
+  const headline = `Update available: ${latest} (current ${current})`;
+  printInfo(colorEnabled() ? c.yellow(headline) : headline);
+  const commands = installCommands(latest);
+  const commandForShell = process.platform === "win32" ? commands.powershell : commands.bash;
   printInfo("");
-  printInfo(colorEnabled() ? c.bold(header) : header);
+  printInfo("Install command:");
+  printInfo(commandForShell);
 
-  const canPrompt = opts.promptInstall && !isNonInteractiveMode();
-  if (canPrompt && (await confirm("Install now?"))) {
+  if (!opts.promptInstall || isNonInteractiveMode()) {
     printInfo("");
-    printInfo(`Running: ${installCommands(latestVersion).pinned}`);
-    await installRelease(latestVersion);
-    printInfo("");
-    printInfo(
-      colorEnabled() ? c.green(`Updated to ${latestVersion}.`) : `Updated to ${latestVersion}.`,
-    );
+    printInfo("Run `azw update` in an interactive terminal to install, or copy the command above.");
     return;
   }
 
-  printInfo("");
-  printInfo("Install later with:");
-  printInfo(`  ${installCommands(latestVersion).pinned}`);
-  if (!canPrompt) {
-    printInfo("");
-    printInfo("Interactive install prompt is disabled in JSON, CI, or non-TTY mode.");
+  const ok = await confirm("Install this update now?", false);
+  if (!ok) {
+    printInfo("Skipped install.");
+    return;
   }
+
+  await installRelease(latest);
+  printInfo(
+    colorEnabled()
+      ? c.green(`Installed az-where ${normalizeTag(latest)}.`)
+      : `Installed az-where ${normalizeTag(latest)}.`,
+  );
 }

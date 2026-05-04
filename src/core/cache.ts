@@ -52,6 +52,7 @@ export function armCacheKey(subscriptionId: string, requestPath: string): string
 export function isArmCacheablePath(requestPath: string): boolean {
   if (requestPath.startsWith("http")) return false;
   if (requestPath.startsWith("/locations?")) return true;
+  if (requestPath.startsWith("/providers?")) return true;
   return requestPath.startsWith("/providers/Microsoft.Compute/skus?");
 }
 

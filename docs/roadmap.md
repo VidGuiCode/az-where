@@ -81,24 +81,76 @@ Planned improvements and features for upcoming releases. This is a living docume
 - `azw available --price` to compare deployable family options with hourly and monthly estimates.
 - Pricing remains optional enrichment and never changes deployability verdicts.
 
+### 0.4.0 - Availability Discovery Foundation
+
+- Reframe public docs from VM-only wording to Azure availability discovery with deep VM support.
+- Introduce canonical explicit VM forms while preserving existing shortcuts:
+  - `azw availability vm <sku> [--region <name>|--eu|--us|--asia|--geography <group>]`
+  - `azw pick vm <sku> [scope]`
+  - `azw suggest vm <sku> [scope]`
+- Add generic resource availability discovery:
+  - `azw availability resource <alias-or-type> [--region <name>|--eu|--us|--asia|--geography <group>]`
+  - `azw check resource <alias-or-type> --region <name>`
+- Add friendly aliases for common Azure resource types, starting with `storage-account`, `key-vault`, `web-app`, `app-service-plan`, `aks`, and `postgres-flexible-server`.
+- Keep verdicts honest by distinguishing generic resource availability from full deployability.
+- Standardize output with `--output` / `-o`:
+  - `-o table`
+  - `-o json`
+  - `-o compact`
+  - `-o value`
+  - `-o name`
+- Keep `--json`, `--compact`, and `--name` as compatibility aliases.
+
 ## Planned
 
-### 0.4.0 - Multi-SKU Comparison
+### 0.4.1 - Syntax Polish And Real-World Smoke
 
-- `azw compare --skus B1s,B2s,D2s_v5`.
-- Matrix-style view across regions and SKU sizes.
+- Polish help text so canonical syntax is taught first and VM shortcuts are clearly labeled as compatibility aliases.
+- Tighten `--output` / `-o` support across all commands, especially unsupported `value`/`name` modes.
+- Manually smoke-test the new syntax against real Azure subscriptions:
+  - `azw availability vm B1s --eu -o compact`
+  - `azw check vm B1s --region westeurope -o json`
+  - `azw availability resource storage-account --eu -o json`
+  - `azw check resource storage-account --region westeurope -o json`
+- Fix any ARM provider metadata edge cases found during resource availability testing.
+
+### 0.4.2 - VM Comparison
+
+- `azw compare vm B1s,B2s,D2s_v5 --eu`.
+- Matrix-style view across regions and VM sizes.
 - JSON shape for agents/scripts to choose fallback sizes automatically.
+- Keep compare VM-only in this release; do not add resource comparison yet.
 
-### 0.5.0 - IaC Preflight
+### 0.4.3 - Check Explanations And JSON Contracts
+
+- Add evidence-based blocker details for `azw check vm` and `azw check resource`.
+- Improve human explanations for `POLICY_DENIED`, `BLOCKED_FOR_SUB`, `QUOTA_FULL`, `SKU_NOT_OFFERED`, `QUOTA_UNKNOWN`, `RESOURCE_SUPPORTED`, and `RESOURCE_NOT_SUPPORTED`.
+- Document stable JSON shapes for:
+  - `availability vm`
+  - `availability resource`
+  - `check vm`
+  - `check resource`
+  - `pick vm`
+  - `suggest vm`
+- Keep explanations factual; do not claim full deployability for generic resource checks.
+
+### 0.4.4 - IaC Preflight Foundation
 
 - `azw verify <file.tf | file.bicep>`.
-- Detect `location + sku` pairs before deployment.
-- Report deployability, quota, and subscription-blocking issues before `terraform apply` or Bicep deployment.
+- Detect `location + sku` pairs before deployment, starting with VM resources.
+- Report deployability, quota, policy, and subscription-blocking issues before `terraform apply` or Bicep deployment.
+- Broaden to generic resource availability checks as the discovery layer matures.
 
 ### Later
 
-- Pricing lookup via the Azure Retail Prices API.
-- Broader Azure resource checks beyond VM SKUs.
+- Deep service-specific checks beyond VMs, only after API research confirms reliable signals:
+  - `azw check storage --kind StorageV2 --replication LRS --region <name>`
+  - `azw check postgres --sku B_Standard_B1ms --region <name>`
+  - `azw check aks --node-size B2s --region <name>`
+  - `azw check appservice --plan B1 --region <name>`
+- Optional tiny script snippets or env output, not full deployment generation.
 - Possible multi-cloud modules if the Azure workflow proves stable first.
+
+See [command-standard.md](command-standard.md) for command naming, output, and verdict rules.
 
 Feedback and suggestions welcome via [GitHub Issues](https://github.com/VidGuiCode/az-where/issues).

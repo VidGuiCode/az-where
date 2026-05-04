@@ -9,6 +9,8 @@ import { createGeosCommand } from "./commands/geos.js";
 import { createSkusCommand } from "./commands/skus.js";
 import { createSuggestCommand } from "./commands/suggest.js";
 import { createAvailableCommand } from "./commands/available.js";
+import { createAvailabilityCommand } from "./commands/availability.js";
+import { createCheckCommand } from "./commands/check.js";
 import { createPriceCommand } from "./commands/price.js";
 import { createUpdateCommand, runUpdateFlow } from "./commands/update.js";
 import { configureHelp } from "./core/help.js";
@@ -29,14 +31,17 @@ function splash(version: string): string {
     : "Requires: az login  (auth is delegated to the Azure CLI)";
   return `
   ${title}  ${tag}
-  Unofficial CLI: where in Azure can I actually deploy this?
+  Unofficial CLI: Azure availability discovery for humans and scripts.
   ${auth}
 
   ${colorEnabled() ? c.bold("Quickest path:") : "Quickest path:"}
-    azw B1s --eu              Coloured table of EU regions for Standard_B1s
-    azw pick B1s --eu         One region name (for terraform / scripts)
+    azw availability vm B1s --eu
+                              Coloured table of EU regions for Standard_B1s
+    azw pick vm B1s --eu      One region name (for terraform / scripts)
+    azw check resource storage-account --region westeurope
+                              Generic resource availability check
     azw quota D2s_v5          vCPU headroom, sorted by free capacity
-    azw suggest B1s --eu      Recommended region with a short reason
+    azw suggest vm B1s --eu   Recommended region with a short reason
     azw available --family B  Deployable VM SKUs in a family
     azw price B2ats_v2 --region swedencentral
                               Estimated retail compute price
@@ -46,8 +51,9 @@ function splash(version: string): string {
     azw update                Check for a newer release + ask before installing
 
   ${colorEnabled() ? c.bold("Global flags:") : "Global flags:"}
-    --json                    Machine-readable JSON output (most verbs)
-    --compact                 One-line JSON (saves tokens when piping to AI)
+    -o, --output <mode>       table, json, compact, value, or name
+    --json                    Compatibility alias for -o json
+    --compact                 Compatibility alias for -o compact
     --no-update-check         Skip the once-per-day GitHub release check
     --no-interactive          Fail instead of prompting (auto on non-TTY)
     (or set AZ_WHERE_NO_UPDATE_CHECK=1 to silence the update check everywhere)
@@ -74,7 +80,7 @@ const program = new Command();
 
 program
   .name("az-where")
-  .description("Unofficial CLI that answers 'where in Azure can I actually deploy this?'")
+  .description("Unofficial Azure availability discovery CLI")
   // --json is declared per-subcommand; declaring it here too makes Commander
   // route the flag to the parent and leave `opts.json` undefined on the action.
   // --compact and --no-interactive are consumed directly via hasArg() in
@@ -94,6 +100,8 @@ program.addCommand(createGeosCommand());
 program.addCommand(createSkusCommand());
 program.addCommand(createSuggestCommand());
 program.addCommand(createAvailableCommand());
+program.addCommand(createAvailabilityCommand());
+program.addCommand(createCheckCommand());
 program.addCommand(createPriceCommand());
 program.addCommand(createUpdateCommand(pkg.version));
 

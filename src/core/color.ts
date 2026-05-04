@@ -1,7 +1,7 @@
-import { hasArg, isCompactMode } from "./runtime.js";
+import { isMachineOutputMode } from "./runtime.js";
 
 function enabled(): boolean {
-  if (hasArg("--json") || hasArg("--name") || hasArg("--pick") || isCompactMode()) return false;
+  if (isMachineOutputMode()) return false;
   if (process.env.NO_COLOR) return false;
   if (process.env.CI) return false;
   return Boolean(process.stdout.isTTY);

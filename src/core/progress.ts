@@ -1,14 +1,14 @@
-import { hasArg } from "./runtime.js";
+import { isMachineOutputMode } from "./runtime.js";
 import { c, colorEnabled } from "./color.js";
 
 function liveMode(): boolean {
-  if (hasArg("--json") || hasArg("--name") || hasArg("--pick")) return false;
+  if (isMachineOutputMode()) return false;
   if (process.env.CI || process.env.NO_COLOR) return false;
   return Boolean(process.stderr.isTTY);
 }
 
 function logMode(): boolean {
-  if (hasArg("--json") || hasArg("--name") || hasArg("--pick")) return false;
+  if (isMachineOutputMode()) return false;
   return true;
 }
 

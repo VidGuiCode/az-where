@@ -2,9 +2,9 @@
 
 # `az-where`
 
-**Where in Azure can I actually deploy this VM size?**
+**What and where can my Azure subscription deploy?**
 
-[![Release](https://img.shields.io/badge/release-v0.3.7-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
+[![Release](https://img.shields.io/badge/release-v0.4.0-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6?logo=typescript&logoColor=white)](tsconfig.json)
@@ -12,10 +12,12 @@
 </div>
 
 ```bash
-azw B1s --eu
+azw availability vm B1s --eu
 ```
 
-`az-where` checks Azure Policy allowed locations, VM SKU availability, subscription restrictions, and vCPU quota across regions, then prints the places where the size can actually deploy.
+`az-where` is a read-only Azure availability discovery CLI. Today it has deep VM support: it checks Azure Policy allowed locations, VM SKU availability, subscription restrictions, and vCPU quota across regions, then prints the places where the size can actually deploy.
+
+It does not deploy resources. Use it to choose or check a location, then use `az`, Terraform, Bicep, or your CI/CD system to deploy.
 
 It is an unofficial community CLI. It wraps the official [Azure CLI (`az`)](https://learn.microsoft.com/cli/azure/) for authentication and uses ARM REST for the region checks. It never stores credentials.
 
@@ -30,7 +32,7 @@ az login
 Install the current release:
 
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.3.7/az-where-0.3.7.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.4.0/az-where-0.4.0.tgz
 ```
 
 Or build from source:
@@ -56,10 +58,13 @@ Two binaries are installed: `azw` and `az-where`. They are the same tool.
 
 | Need | Command |
 |---|---|
-| Check a VM size globally | `azw B1s` |
-| Check only Europe / US / Asia Pacific | `azw B1s --eu` / `--us` / `--asia` |
-| Print one deployable region | `azw pick B1s` |
-| Get a recommended region with a reason | `azw suggest B1s --eu --near Luxembourg` |
+| Check a VM size globally | `azw availability vm B1s` |
+| Check only Europe / US / Asia Pacific | `azw availability vm B1s --eu` / `--us` / `--asia` |
+| Check one VM size in one region | `azw check vm B1s --region westeurope` |
+| Print one deployable region | `azw pick vm B1s` |
+| Get a recommended region with a reason | `azw suggest vm B1s --eu --near Luxembourg` |
+| Check generic resource availability | `azw availability resource storage-account --eu` |
+| Check one resource in one region | `azw check resource storage-account --region westeurope` |
 | Find deployable SKUs in a family | `azw available --family B --eu` |
 | Compare deployable family options with price | `azw available --family B --eu --price --currency EUR --sort price` |
 | Price one VM size in one region | `azw price B2ats_v2 --region swedencentral --currency EUR` |
@@ -88,9 +93,19 @@ During scans, stderr shows progress immediately, including the initial Azure tok
 ## Commands
 
 ```bash
-azw regions <sku>       # full availability table; also used by `azw B1s`
-azw pick <sku>          # one deployable region name for scripts
-azw suggest <sku>       # recommended region with a short explanation
+azw availability vm <sku>
+                         # canonical VM availability scan
+azw availability resource <alias-or-type>
+                         # generic Azure resource availability scan
+azw check vm <sku> --region <name>
+                         # one-region VM deployability verdict
+azw check resource <alias-or-type> --region <name>
+                         # one-region generic resource availability verdict
+azw pick vm <sku>        # one deployable region name for scripts
+azw suggest vm <sku>     # recommended region with a short explanation
+azw regions <sku>        # compatibility shortcut for VM availability
+azw pick <sku>           # compatibility shortcut
+azw suggest <sku>        # compatibility shortcut
 azw available --family B # deployable VM SKUs in a family
 azw price <sku> --region <name>
                          # estimated retail compute price
@@ -117,6 +132,7 @@ Run `azw <command> --help` for command-specific flags.
 | `--json` | Structured JSON output; progress stays off |
 | `--compact` | One-line JSON for scripts and agents |
 | `--name` | Region names only, for `regions` / `pick` |
+| `-o, --output <mode>` | Standard output mode: `table`, `json`, `compact`, `value`, or `name` |
 | `--no-policy` | Skip Azure Policy allowed-location checks |
 | `--no-update-check` | Skip the once-per-day release check |
 
@@ -146,6 +162,7 @@ The main read-only ARM calls are:
 
 - `GET /subscriptions/{id}/locations`
 - `GET /subscriptions/{id}/providers/Microsoft.Authorization/policyAssignments`
+- `GET /subscriptions/{id}/providers`
 - `GET /subscriptions/{id}/providers/Microsoft.Compute/skus`
 - `GET /subscriptions/{id}/providers/Microsoft.Compute/locations/{region}/usages`
 
@@ -156,7 +173,7 @@ Pricing uses the public Azure Retail Prices API. It is an estimate for VM comput
 ## Scripting
 
 ```bash
-terraform apply -var="location=$(azw pick B1s --eu)"
+terraform apply -var="location=$(azw pick vm B1s --eu -o value)"
 ```
 
 `pick` exits with code `1` if no region qualifies, including when all otherwise-good regions are blocked by Azure Policy, so deployment scripts fail fast instead of receiving an unusable location.
@@ -164,7 +181,7 @@ terraform apply -var="location=$(azw pick B1s --eu)"
 For machine-readable output:
 
 ```bash
-azw B1s --eu --json --compact
+azw availability vm B1s --eu -o compact
 ```
 
 ## Development
@@ -176,7 +193,7 @@ bun run typecheck
 bun test
 ```
 
-More details live in [docs/architecture.md](docs/architecture.md), with future ideas in [docs/roadmap.md](docs/roadmap.md).
+More details live in [docs/architecture.md](docs/architecture.md), with future ideas in [docs/roadmap.md](docs/roadmap.md). Future command naming and output rules are tracked in [docs/command-standard.md](docs/command-standard.md).
 
 ## License
 

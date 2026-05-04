@@ -43,6 +43,19 @@ export interface AzVmUsage {
   unit: string;
 }
 
+export interface AzProvider {
+  namespace: string;
+  registrationState?: string;
+  resourceTypes?: AzProviderResourceType[];
+}
+
+export interface AzProviderResourceType {
+  resourceType: string;
+  locations?: string[];
+  apiVersions?: string[];
+  capabilities?: string;
+}
+
 export interface RegionVerdict {
   region: string;
   displayName: string;
@@ -62,4 +75,18 @@ export interface RegionVerdict {
     | "BLOCKED_FOR_SUB"
     | "POLICY_DENIED"
     | "QUOTA_UNKNOWN";
+}
+
+export interface ResourceAvailabilityVerdict {
+  kind: "resource";
+  target: string;
+  resourceType: string;
+  region: string;
+  displayName: string;
+  geographyGroup?: string;
+  physicalLocation?: string;
+  policyAllowed: boolean | null;
+  policyReason: string | null;
+  confidence: "availability";
+  verdict: "RESOURCE_SUPPORTED" | "RESOURCE_NOT_SUPPORTED" | "POLICY_DENIED";
 }

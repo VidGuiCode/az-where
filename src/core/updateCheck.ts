@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { hasArg, isCompactMode } from "./runtime.js";
+import { hasArg, isMachineOutputMode } from "./runtime.js";
 import { c, colorEnabled } from "./color.js";
 
 /**
@@ -18,7 +18,7 @@ import { c, colorEnabled } from "./color.js";
  *     out would be absurd.
  *   - Short timeout (1.5s). Worst case hits once per day; users won't
  *     tolerate a multi-second tax on every command.
- *   - Opt-out everywhere. `--json`, `--name`, `--compact`, `--no-update-check`,
+ *   - Opt-out everywhere. Machine output, `--no-update-check`,
  *     `NO_COLOR`, `CI`, and `AZ_WHERE_NO_UPDATE_CHECK=1` all suppress both
  *     the network call and the banner.
  */
@@ -52,7 +52,7 @@ export interface CheckForUpdateOptions {
  */
 export function shouldSkipAutomaticBanner(): boolean {
   if (hasArg("--no-update-check")) return true;
-  if (hasArg("--json") || hasArg("--name") || hasArg("--pick") || isCompactMode()) return true;
+  if (isMachineOutputMode()) return true;
   if (process.env.AZ_WHERE_NO_UPDATE_CHECK) return true;
   if (process.env.CI) return true;
   if (process.env.NO_COLOR) return true;
@@ -172,7 +172,7 @@ export async function checkForUpdate(
   };
 
   const cached = await readCache();
-  let latestTag = !opts.forceRefresh && isFresh(cached) ? cached?.latestTag ?? null : null;
+  let latestTag = !opts.forceRefresh && isFresh(cached) ? (cached?.latestTag ?? null) : null;
 
   if (!latestTag) {
     const fetched = await fetchLatestTag(currentVersion);

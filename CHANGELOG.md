@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+### Availability Discovery Foundation
+
+- Add canonical syntax for VM availability, picks, and suggestions: `azw availability vm <sku>`, `azw pick vm <sku>`, and `azw suggest vm <sku>`.
+- Add `azw check vm <sku> --region <region>` for one-region VM deployability verdicts.
+- Add generic resource availability checks with friendly aliases, including `storage-account`, `key-vault`, `web-app`, `app-service-plan`, `aks`, and `postgres-flexible-server`.
+- Add `azw availability resource <alias-or-type>` and `azw check resource <alias-or-type> --region <region>` for read-only resource-type availability.
+- Add standard output mode flags: `--output table|json|compact|value|name` and `-o table|json|compact|value|name`.
+- Keep `--json`, `--compact`, `--name`, and existing VM shortcuts as compatibility aliases.
+
 ## 0.3.7
 
 ### Pricing

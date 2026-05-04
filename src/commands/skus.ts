@@ -8,6 +8,13 @@ import { c, colorEnabled } from "../core/color.js";
 import { armCacheSummary } from "../core/cache.js";
 import { skuMatchesFamilyPrefix, skuMemoryGiB, skuVcpus } from "../core/sku.js";
 import type { AzVmSku } from "../core/types.js";
+import {
+  addJsonCompatibilityOptions,
+  addOutputOption,
+  isJsonOutput,
+  resolveOutputMode,
+  type OutputMode,
+} from "../core/outputMode.js";
 
 /**
  * Discovery verb. One ARM call returns every VM SKU the subscription can see,
@@ -16,7 +23,7 @@ import type { AzVmSku } from "../core/types.js";
  * size docs end-to-end.
  */
 export function createSkusCommand(): Command {
-  return new Command("skus")
+  const cmd = new Command("skus")
     .description("Discover VM SKU names (family, vCPU, RAM). Input for `azw regions <sku>`.")
     .option("--region <name>", "Scope to a single region (fast path, ~2-3s)")
     .option("--eu", "Only SKUs offered in an EU region")
@@ -25,9 +32,11 @@ export function createSkusCommand(): Command {
     .option("--geography <group>", "geographyGroup filter (or 'all')", "all")
     .option("--family <letter>", "Filter by family prefix (e.g. B, D, E, F, L, N)")
     .option("--refresh", "Bypass cached ARM SKU/location data")
-    .option("--json", "Machine-readable JSON output")
     .action(async (opts) => {
+      let jsonErrors = Boolean(opts.json);
       try {
+        const mode = resolveOutputMode(opts, { allowName: true });
+        jsonErrors = isJsonOutput(mode);
         // Single-region fast path — skip the 35s subscription catalog and hit
         // the location-scoped skus endpoint, which returns in ~2-3s.
         if (opts.region) {
@@ -46,7 +55,7 @@ export function createSkusCommand(): Command {
               `--region scopes to a single region and can't be combined with ${conflicting.join(", ")}. Drop either the geo flag or --region.`,
             );
           }
-          await runSingleRegion(String(opts.region), opts);
+          await runSingleRegion(String(opts.region), opts, mode);
           return;
         }
 
@@ -137,7 +146,12 @@ export function createSkusCommand(): Command {
           return a.name.localeCompare(b.name);
         });
 
-        if (opts.json) {
+        if (mode === "name") {
+          for (const r of rows) console.log(r.name);
+          return;
+        }
+
+        if (isJsonOutput(mode)) {
           printJson({
             schemaVersion: 1,
             kind: "skus",
@@ -184,9 +198,11 @@ export function createSkusCommand(): Command {
         const tip = `${rows.length} SKUs · pipe any NAME into 'azw regions <name>' to check deployability.`;
         printInfo(colorEnabled() ? c.dim(tip) : tip);
       } catch (err) {
-        exitWithError(err, Boolean(opts.json));
+        exitWithError(err, jsonErrors);
       }
     });
+  addOutputOption(addJsonCompatibilityOptions(cmd, "Machine-readable JSON output"));
+  return cmd;
 }
 
 /**
@@ -198,6 +214,7 @@ export function createSkusCommand(): Command {
 async function runSingleRegion(
   region: string,
   opts: { family?: string; json?: boolean; refresh?: boolean },
+  mode: OutputMode,
 ): Promise<void> {
   const spinner = new Spinner(`Fetching SKUs for ${region}`, 3);
   let skus: AzVmSku[];
@@ -235,7 +252,12 @@ async function runSingleRegion(
       return a.name.localeCompare(b.name);
     });
 
-  if (opts.json) {
+  if (mode === "name") {
+    for (const r of rows) console.log(r.name);
+    return;
+  }
+
+  if (isJsonOutput(mode)) {
     printJson({
       schemaVersion: 1,
       kind: "skus",

@@ -13,9 +13,15 @@ import {
   type PricedAvailableSku,
   type VmPriceOs,
 } from "../core/pricing.js";
+import {
+  addJsonCompatibilityOptions,
+  addOutputOption,
+  isJsonOutput,
+  resolveOutputMode,
+} from "../core/outputMode.js";
 
 export function createAvailableCommand(): Command {
-  return new Command("available")
+  const cmd = new Command("available")
     .description("List VM SKUs in a family that are actually deployable now.")
     .requiredOption("--family <prefix>", "VM family prefix (e.g. B, D, E, Basv2)")
     .option("--region <name>", "Scope to a single region")
@@ -30,9 +36,11 @@ export function createAvailableCommand(): Command {
     .option("--sort <default|price>", "Sort output; price requires --price", "default")
     .option("--no-policy", "Skip Azure Policy allowed-location checks")
     .option("--refresh", "Bypass cached ARM location/SKU data")
-    .option("--json", "Machine-readable JSON output")
     .action(async (opts) => {
+      let jsonErrors = Boolean(opts.json);
       try {
+        const mode = resolveOutputMode(opts);
+        jsonErrors = isJsonOutput(mode);
         const family = String(opts.family).trim();
         if (!family)
           throw new ValidationError("Missing family. Try: azw available --family B --eu");
@@ -90,7 +98,7 @@ export function createAvailableCommand(): Command {
           : skus;
         const outputSkus = opts.sort === "price" ? sortSkusByPrice(outputSkusRaw) : outputSkusRaw;
 
-        if (opts.json) {
+        if (isJsonOutput(mode)) {
           printJson({
             schemaVersion: 1,
             kind: "available",
@@ -149,9 +157,11 @@ export function createAvailableCommand(): Command {
 
         if (!deployable) process.exit(1);
       } catch (err) {
-        exitWithError(err, Boolean(opts.json));
+        exitWithError(err, jsonErrors);
       }
     });
+  addOutputOption(addJsonCompatibilityOptions(cmd, "Machine-readable JSON output"));
+  return cmd;
 }
 
 function validateRegionScope(opts: {

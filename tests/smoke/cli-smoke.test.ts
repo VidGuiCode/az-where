@@ -45,6 +45,8 @@ describe("CLI smoke tests", () => {
       "skus",
       "suggest",
       "available",
+      "availability",
+      "check",
       "price",
       "update",
     ]) {
@@ -74,6 +76,7 @@ describe("CLI smoke tests", () => {
     expect(output).toContain("--all");
     expect(output).toContain("--json");
     expect(output).toContain("--name");
+    expect(output).toContain("--output");
     expect(output).toContain("--no-policy");
     expect(output).toContain("--refresh");
   });
@@ -99,6 +102,23 @@ describe("CLI smoke tests", () => {
     expect(output).toContain("--near");
     expect(output).toContain("--no-policy");
     expect(output).toContain("--json");
+    expect(output).toContain("--output");
+  });
+
+  it("availability command exposes canonical vm and resource subcommands", () => {
+    const output = run(["availability", "--help"]);
+    expect(output).toContain("vm");
+    expect(output).toContain("resource");
+    expect(run(["availability", "vm", "--help"])).toContain("--output");
+    expect(run(["availability", "resource", "--help"])).toContain("--name");
+  });
+
+  it("check command exposes vm and resource subcommands", () => {
+    const output = run(["check", "--help"]);
+    expect(output).toContain("vm");
+    expect(output).toContain("resource");
+    expect(run(["check", "vm", "--help"])).toContain("--region");
+    expect(run(["check", "resource", "--help"])).toContain("--output");
   });
 
   it("available command exists and has deployability filters", () => {

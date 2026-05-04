@@ -2,7 +2,18 @@
 
 ## Product Shape
 
-`az-where` is a local, read-only CLI that answers "where in Azure can I actually deploy this?" It delegates authentication to the official Azure CLI and calls Azure Resource Manager directly for the hot paths.
+`az-where` is a local, read-only Azure availability discovery CLI. It answers "what and where can my current Azure subscription deploy?" while leaving actual deployment to `az`, Terraform, Bicep, and CI/CD systems.
+
+The current implementation has deep VM support. That is the first complete vertical, not the permanent product boundary.
+
+The design split is:
+
+```text
+az gives raw Azure facts and performs operations.
+azw combines read-only facts into availability answers for humans and scripts.
+```
+
+It delegates authentication to the official Azure CLI and calls Azure Resource Manager directly for the hot paths.
 
 Two boundaries talk to Azure:
 
@@ -23,11 +34,17 @@ The tool never creates, modifies, or deletes Azure resources.
 
 `src/cli.ts` registers commands and rewrites positional SKU shorthand. For example, `azw B1s --eu` becomes `azw regions Standard_B1s --eu` before Commander parses arguments.
 
+Future generalized commands should follow [the CLI command standard](command-standard.md): `azw <verb> <kind> <target> [scope flags] [output flags]`.
+
+The canonical grammar should be used for new docs and new resource kinds, while existing VM shortcuts remain compatibility aliases. For example, `azw B1s --eu` remains valid, but the explicit form is `azw availability vm B1s --eu`.
+
 ## Commands
 
 | File | Verb |
 |---|---|
 | `where.ts` | `azw where` - current Azure subscription and user |
+| `availability.ts` | `azw availability vm <sku>` / `azw availability resource <target>` - canonical availability scans |
+| `check.ts` | `azw check vm <sku>` / `azw check resource <target>` - one-region verdicts |
 | `regions.ts` | `azw regions <sku>` - full availability table |
 | `pick.ts` | `azw pick <sku>` - one region name for scripts |
 | `suggest.ts` | `azw suggest <sku>` - recommended region with a short reason |
