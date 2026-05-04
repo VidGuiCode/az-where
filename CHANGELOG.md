@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1
+
+### Syntax Polish
+
+- Teach canonical availability syntax first in top-level help by listing `availability`, `check`, `pick vm`, and `suggest vm` ahead of legacy VM shortcuts.
+- Clarify `pick` and `suggest` argument help so `vm <sku>` is the documented shape while `pick <sku>` and `suggest <sku>` remain compatibility shortcuts.
+- Update legacy command descriptions to point users toward canonical `azw availability vm <sku>` syntax.
+
 ## 0.4.0
 
 ### Availability Discovery Foundation

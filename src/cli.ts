@@ -37,6 +37,8 @@ function splash(version: string): string {
   ${colorEnabled() ? c.bold("Quickest path:") : "Quickest path:"}
     azw availability vm B1s --eu
                               Coloured table of EU regions for Standard_B1s
+    azw check vm B1s --region westeurope
+                              One-region VM deployability verdict
     azw pick vm B1s --eu      One region name (for terraform / scripts)
     azw check resource storage-account --region westeurope
                               Generic resource availability check
@@ -93,15 +95,15 @@ program
   });
 
 program.addCommand(createWhereCommand());
-program.addCommand(createRegionsCommand());
+program.addCommand(createAvailabilityCommand());
+program.addCommand(createCheckCommand());
 program.addCommand(createPickCommand());
+program.addCommand(createSuggestCommand());
+program.addCommand(createRegionsCommand());
 program.addCommand(createQuotaCommand());
 program.addCommand(createGeosCommand());
 program.addCommand(createSkusCommand());
-program.addCommand(createSuggestCommand());
 program.addCommand(createAvailableCommand());
-program.addCommand(createAvailabilityCommand());
-program.addCommand(createCheckCommand());
 program.addCommand(createPriceCommand());
 program.addCommand(createUpdateCommand(pkg.version));
 

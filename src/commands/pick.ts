@@ -15,9 +15,9 @@ import {
 
 export function createPickCommand(): Command {
   const cmd = new Command("pick")
-    .description("Print one region where the SKU is ready to deploy. For `terraform apply -var`.")
-    .argument("[kindOrSku]", "VM SKU, or kind for canonical syntax (`vm`)")
-    .argument("[target]", "VM SKU when using canonical syntax (`azw pick vm B1s`)")
+    .description("Pick one deployable VM region. Canonical: `azw pick vm <sku>`.")
+    .argument("[vmOrSku]", "Canonical kind `vm`, or VM SKU shortcut")
+    .argument("[sku]", "VM SKU for canonical syntax (`azw pick vm B1s`)")
     .option("--sku <sku>", "VM SKU (alternative to positional)")
     .option("--eu", "EU only")
     .option("--us", "US only")
@@ -26,8 +26,8 @@ export function createPickCommand(): Command {
     .option("--concurrency <n>", "Parallel ARM calls (default 16)", "16")
     .option("--no-policy", "Skip Azure Policy allowed-location checks")
     .option("--refresh", "Bypass cached ARM location/SKU data")
-    .action(async (kindOrSku: string | undefined, target: string | undefined, opts) => {
-      await runPickAction(resolveVmTarget(kindOrSku, target, opts.sku, "pick"), opts);
+    .action(async (vmOrSku: string | undefined, sku: string | undefined, opts) => {
+      await runPickAction(resolveVmTarget(vmOrSku, sku, opts.sku, "pick"), opts);
     });
   addOutputOption(addJsonCompatibilityOptions(cmd, "Emit JSON with the pick"));
   return cmd;

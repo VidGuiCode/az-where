@@ -16,9 +16,9 @@ import { loadPolicyCheck } from "../core/policy.js";
 
 export function createSuggestCommand(): Command {
   const cmd = new Command("suggest")
-    .description("Suggest one deployable region and explain why it was chosen.")
-    .argument("[kindOrSku]", "VM SKU, or kind for canonical syntax (`vm`)")
-    .argument("[target]", "VM SKU when using canonical syntax (`azw suggest vm B1s`)")
+    .description("Suggest one deployable VM region. Canonical: `azw suggest vm <sku>`.")
+    .argument("[vmOrSku]", "Canonical kind `vm`, or VM SKU shortcut")
+    .argument("[sku]", "VM SKU for canonical syntax (`azw suggest vm B1s`)")
     .option("--sku <sku>", "VM SKU (alternative to positional)")
     .option("--eu", "EU only")
     .option("--us", "US only")
@@ -28,8 +28,8 @@ export function createSuggestCommand(): Command {
     .option("--concurrency <n>", "Parallel ARM calls (default 16)", "16")
     .option("--no-policy", "Skip Azure Policy allowed-location checks")
     .option("--refresh", "Bypass cached ARM location/SKU data")
-    .action(async (kindOrSku: string | undefined, target: string | undefined, opts) => {
-      await runSuggestAction(resolveVmTarget(kindOrSku, target, opts.sku, "suggest"), opts);
+    .action(async (vmOrSku: string | undefined, sku: string | undefined, opts) => {
+      await runSuggestAction(resolveVmTarget(vmOrSku, sku, opts.sku, "suggest"), opts);
     });
   addOutputOption(addJsonCompatibilityOptions(cmd, "Machine-readable JSON output"));
   return cmd;

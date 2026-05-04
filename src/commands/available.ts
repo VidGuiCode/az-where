@@ -22,7 +22,7 @@ import {
 
 export function createAvailableCommand(): Command {
   const cmd = new Command("available")
-    .description("List VM SKUs in a family that are actually deployable now.")
+    .description("List deployable VM SKUs in a family. Kept separate from canonical availability scans.")
     .requiredOption("--family <prefix>", "VM family prefix (e.g. B, D, E, Basv2)")
     .option("--region <name>", "Scope to a single region")
     .option("--eu", "EU only")

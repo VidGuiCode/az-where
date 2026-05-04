@@ -1,6 +1,6 @@
 {
   "name": "az-where",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Unofficial Azure availability discovery CLI",
   "license": "MIT",
   "private": false,

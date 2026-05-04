@@ -101,11 +101,17 @@ Planned improvements and features for upcoming releases. This is a living docume
   - `-o name`
 - Keep `--json`, `--compact`, and `--name` as compatibility aliases.
 
-## Planned
-
-### 0.4.1 - Syntax Polish And Real-World Smoke
+### 0.4.1 - Syntax Polish And Help Order
 
 - Polish help text so canonical syntax is taught first and VM shortcuts are clearly labeled as compatibility aliases.
+- List `availability`, `check`, `pick`, and `suggest` before legacy VM-specific commands in top-level help.
+- Clarify `pick` and `suggest` argument labels around `vm <sku>` canonical syntax.
+- Update legacy command descriptions to point toward `azw availability vm <sku>`.
+
+## Planned
+
+### 0.4.2 - Real-World Smoke And Output Hardening
+
 - Tighten `--output` / `-o` support across all commands, especially unsupported `value`/`name` modes.
 - Manually smoke-test the new syntax against real Azure subscriptions:
   - `azw availability vm B1s --eu -o compact`
@@ -114,14 +120,14 @@ Planned improvements and features for upcoming releases. This is a living docume
   - `azw check resource storage-account --region westeurope -o json`
 - Fix any ARM provider metadata edge cases found during resource availability testing.
 
-### 0.4.2 - VM Comparison
+### 0.4.3 - VM Comparison
 
 - `azw compare vm B1s,B2s,D2s_v5 --eu`.
 - Matrix-style view across regions and VM sizes.
 - JSON shape for agents/scripts to choose fallback sizes automatically.
 - Keep compare VM-only in this release; do not add resource comparison yet.
 
-### 0.4.3 - Check Explanations And JSON Contracts
+### 0.4.4 - Check Explanations And JSON Contracts
 
 - Add evidence-based blocker details for `azw check vm` and `azw check resource`.
 - Improve human explanations for `POLICY_DENIED`, `BLOCKED_FOR_SUB`, `QUOTA_FULL`, `SKU_NOT_OFFERED`, `QUOTA_UNKNOWN`, `RESOURCE_SUPPORTED`, and `RESOURCE_NOT_SUPPORTED`.
@@ -134,7 +140,7 @@ Planned improvements and features for upcoming releases. This is a living docume
   - `suggest vm`
 - Keep explanations factual; do not claim full deployability for generic resource checks.
 
-### 0.4.4 - IaC Preflight Foundation
+### 0.4.5 - IaC Preflight Foundation
 
 - `azw verify <file.tf | file.bicep>`.
 - Detect `location + sku` pairs before deployment, starting with VM resources.

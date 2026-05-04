@@ -16,7 +16,7 @@ import {
 
 export function createRegionsCommand(): Command {
   const cmd = new Command("regions")
-    .description("Where can I deploy this VM SKU? Scans regions in parallel and prints a verdict.")
+    .description("Compatibility shortcut for `azw availability vm <sku>`.")
     .argument("[sku]", "VM SKU (e.g. B1s, Standard_B1s, D2s_v5)")
     .option("--sku <sku>", "VM SKU (alternative to positional argument)")
     .option("--eu", "Shortcut for --geography Europe")

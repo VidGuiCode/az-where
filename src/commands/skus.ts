@@ -24,7 +24,7 @@ import {
  */
 export function createSkusCommand(): Command {
   const cmd = new Command("skus")
-    .description("Discover VM SKU names (family, vCPU, RAM). Input for `azw regions <sku>`.")
+    .description("Discover VM SKU names (family, vCPU, RAM). Input for `azw availability vm <sku>`.")
     .option("--region <name>", "Scope to a single region (fast path, ~2-3s)")
     .option("--eu", "Only SKUs offered in an EU region")
     .option("--us", "Only SKUs offered in a US region")
