@@ -108,17 +108,16 @@ Planned improvements and features for upcoming releases. This is a living docume
 - Clarify `pick` and `suggest` argument labels around `vm <sku>` canonical syntax.
 - Update legacy command descriptions to point toward `azw availability vm <sku>`.
 
-## Planned
-
 ### 0.4.2 - Real-World Smoke And Output Hardening
 
 - Tighten `--output` / `-o` support across all commands, especially unsupported `value`/`name` modes.
-- Manually smoke-test the new syntax against real Azure subscriptions:
-  - `azw availability vm B1s --eu -o compact`
-  - `azw check vm B1s --region westeurope -o json`
-  - `azw availability resource storage-account --eu -o json`
-  - `azw check resource storage-account --region westeurope -o json`
-- Fix any ARM provider metadata edge cases found during resource availability testing.
+- Add command-specific supported-mode errors before Azure calls start.
+- Keep script output modes quiet: JSON carries policy metadata, while `value` and `name` emit only their intended values.
+- Recognize compact shorthand forms such as `-ocompact` as machine output for progress/update suppression.
+- Add smoke coverage for invalid output-mode combinations that should fail before Azure calls.
+- Live-smoke canonical generic resource checks against ARM provider metadata and policy-restricted subscriptions.
+
+## Planned
 
 ### 0.4.3 - VM Comparison
 

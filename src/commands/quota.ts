@@ -11,6 +11,7 @@ import {
   addJsonCompatibilityOptions,
   addOutputOption,
   isJsonOutput,
+  isScriptOutput,
   resolveOutputMode,
 } from "../core/outputMode.js";
 
@@ -32,7 +33,7 @@ export function createQuotaCommand(): Command {
     .action(async (positional: string | undefined, opts) => {
       let jsonErrors = Boolean(opts.json);
       try {
-        const mode = resolveOutputMode(opts);
+        const mode = resolveOutputMode(opts, { command: "quota" });
         jsonErrors = isJsonOutput(mode);
         const rawSku = opts.sku ?? positional;
         if (!rawSku) throw new ValidationError("Missing SKU. Try: azw quota B1s --eu");
@@ -97,11 +98,11 @@ export function createQuotaCommand(): Command {
         }
 
         if (rows.length === 0) {
-          printPolicyWarning(policy.summary);
+          printPolicyWarning(policy.summary, mode);
           const msg = `No regions in ${geo ?? "scope"} offer ${sku}. Try: azw regions ${sku}${geo ? ` --geography ${geo}` : ""}`;
           printInfo(msg);
         } else {
-          printPolicyWarning(policy.summary);
+          printPolicyWarning(policy.summary, mode);
           printVerdictTable(rows);
           if (dropped > 0) {
             const note = `+ ${dropped} regions hidden (not offered or subscription-blocked; --all to show)`;
@@ -118,7 +119,11 @@ export function createQuotaCommand(): Command {
   return cmd;
 }
 
-function printPolicyWarning(policy: PolicySummary): void {
+function printPolicyWarning(
+  policy: PolicySummary,
+  mode: ReturnType<typeof resolveOutputMode>,
+): void {
+  if (isScriptOutput(mode)) return;
   if (!policy.error) return;
   process.stderr.write(`Azure Policy was not checked: ${policy.error}\n`);
 }

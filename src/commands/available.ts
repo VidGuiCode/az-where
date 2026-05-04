@@ -22,7 +22,9 @@ import {
 
 export function createAvailableCommand(): Command {
   const cmd = new Command("available")
-    .description("List deployable VM SKUs in a family. Kept separate from canonical availability scans.")
+    .description(
+      "List deployable VM SKUs in a family. Kept separate from canonical availability scans.",
+    )
     .requiredOption("--family <prefix>", "VM family prefix (e.g. B, D, E, Basv2)")
     .option("--region <name>", "Scope to a single region")
     .option("--eu", "EU only")
@@ -39,7 +41,7 @@ export function createAvailableCommand(): Command {
     .action(async (opts) => {
       let jsonErrors = Boolean(opts.json);
       try {
-        const mode = resolveOutputMode(opts);
+        const mode = resolveOutputMode(opts, { command: "available" });
         jsonErrors = isJsonOutput(mode);
         const family = String(opts.family).trim();
         if (!family)

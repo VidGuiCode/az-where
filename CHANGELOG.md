@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.2
+
+### Output Hardening
+
+- Tighten `--output` / `-o` validation so `value` and `name` modes are accepted only on commands where they have a stable script-safe meaning.
+- Improve unsupported output-mode errors with command-specific supported-mode lists.
+- Treat compact shorthand forms such as `-ocompact` as machine output so progress, color, and update banners stay suppressed.
+- Keep policy warning noise out of script output modes while preserving policy metadata in JSON responses.
+- Add resolver and CLI smoke tests for output-mode aliases and unsupported combinations.
+- Smoke-test canonical generic resource checks against live ARM provider metadata and Azure Policy behavior.
+
 ## 0.4.1
 
 ### Syntax Polish

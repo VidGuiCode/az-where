@@ -14,16 +14,13 @@ export interface OutputOpts {
 export interface ResolveOutputOptions {
   allowName?: boolean;
   allowValue?: boolean;
+  command?: string;
 }
 
 const MODES = new Set<OutputMode>(["table", "json", "compact", "value", "name"]);
 
 export function addOutputOption(cmd: Command): Command {
-  return cmd.option(
-    "-o, --output <mode>",
-    "Output mode: table, json, compact, value, or name",
-    "table",
-  );
+  return cmd.option("-o, --output <mode>", "Output mode: table, json, compact, value, or name");
 }
 
 export function addJsonCompatibilityOptions(cmd: Command, jsonDescription: string): Command {
@@ -37,7 +34,7 @@ export function resolveOutputMode(
   const raw = String(opts.output ?? "table")
     .trim()
     .toLowerCase();
-  const explicit = opts.output !== undefined && raw !== "table";
+  const explicit = opts.output !== undefined;
   let mode: OutputMode;
 
   if (explicit) {
@@ -56,14 +53,33 @@ export function resolveOutputMode(
   }
 
   if (mode === "name" && !options.allowName) {
-    throw new ValidationError("--output name is not supported for this command.");
+    throw unsupportedMode("name", options);
   }
   if (mode === "value" && !options.allowValue) {
-    throw new ValidationError("--output value is not supported for this command.");
+    throw unsupportedMode("value", options);
   }
   return mode;
 }
 
 export function isJsonOutput(mode: OutputMode): boolean {
   return mode === "json" || mode === "compact";
+}
+
+export function isScriptOutput(mode: OutputMode): boolean {
+  return mode === "json" || mode === "compact" || mode === "value" || mode === "name";
+}
+
+export function supportedOutputModes(options: ResolveOutputOptions = {}): OutputMode[] {
+  const modes: OutputMode[] = ["table", "json", "compact"];
+  if (options.allowValue) modes.push("value");
+  if (options.allowName) modes.push("name");
+  return modes;
+}
+
+function unsupportedMode(mode: OutputMode, options: ResolveOutputOptions): ValidationError {
+  const command = options.command ? ` for ${options.command}` : "";
+  const supported = supportedOutputModes(options).join(", ");
+  return new ValidationError(
+    `--output ${mode} is not supported${command}. Supported modes: ${supported}.`,
+  );
 }

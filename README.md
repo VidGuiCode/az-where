@@ -4,7 +4,7 @@
 
 **What and where can my Azure subscription deploy?**
 
-[![Release](https://img.shields.io/badge/release-v0.4.1-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
+[![Release](https://img.shields.io/badge/release-v0.4.2-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6?logo=typescript&logoColor=white)](tsconfig.json)
@@ -32,7 +32,7 @@ az login
 Install the current release:
 
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.4.1/az-where-0.4.1.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.4.2/az-where-0.4.2.tgz
 ```
 
 Or build from source:
@@ -131,7 +131,7 @@ Run `azw <command> --help` for command-specific flags.
 | `--os <linux\|windows>` | OS pricing lens for VM compute rates |
 | `--json` | Structured JSON output; progress stays off |
 | `--compact` | One-line JSON for scripts and agents |
-| `--name` | Region names only, for `regions` / `pick` |
+| `--name` | Compatibility alias for `-o name` where name output is supported |
 | `-o, --output <mode>` | Standard output mode: `table`, `json`, `compact`, `value`, or `name` |
 | `--no-policy` | Skip Azure Policy allowed-location checks |
 | `--no-update-check` | Skip the once-per-day release check |
@@ -182,7 +182,11 @@ For machine-readable output:
 
 ```bash
 azw availability vm B1s --eu -o compact
+azw check vm B1s --region westeurope -o json
+azw availability resource storage-account --eu -o json
 ```
+
+`value` and `name` are intentionally narrower than JSON: they are only enabled on commands where the output has a stable single-value or one-name-per-line meaning. Unsupported combinations fail as validation errors before any Azure calls.
 
 ## Development
 

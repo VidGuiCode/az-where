@@ -244,9 +244,11 @@ Rules:
 - Human output goes to stdout.
 - Progress goes to stderr.
 - JSON/value modes suppress progress.
+- `value` and `name` are opt-in per command; unsupported combinations must fail with a validation error before Azure calls start.
 - Scripts should have stable fields and stable exit codes.
 - `value` should emit exactly one shell-friendly value or fail.
 - `name` should emit one resource or region name per line.
+- `json`, `compact`, `value`, and `name` should avoid extra stderr notes unless stderr is carrying a fatal error.
 - Human tables can change cosmetically; JSON field names should not change casually.
 - `--output` / `-o` should be preferred in new docs and examples.
 - Existing `--json`, `--compact`, and `--name` flags should remain as compatibility aliases.

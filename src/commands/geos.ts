@@ -17,7 +17,7 @@ export function createGeosCommand(): Command {
     .action(async (opts) => {
       let jsonErrors = Boolean(opts.json);
       try {
-        const mode = resolveOutputMode(opts);
+        const mode = resolveOutputMode(opts, { command: "geos" });
         jsonErrors = isJsonOutput(mode);
         const locations = await listLocations({
           progressLabel: "Fetching Azure regions",

@@ -26,7 +26,7 @@ export function createUpdateCommand(currentVersion: string): Command {
     .action(async (opts) => {
       let jsonErrors = Boolean(opts.json);
       try {
-        const mode = resolveOutputMode(opts);
+        const mode = resolveOutputMode(opts, { command: "update" });
         jsonErrors = isJsonOutput(mode);
         await runUpdateFlow(currentVersion, {
           forceRefresh: true,

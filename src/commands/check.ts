@@ -58,7 +58,7 @@ async function runVmCheckAction(
 ): Promise<void> {
   let jsonErrors = Boolean(opts.json);
   try {
-    const mode = resolveOutputMode(opts, { allowValue: true });
+    const mode = resolveOutputMode(opts, { allowValue: true, command: "check vm" });
     jsonErrors = isJsonOutput(mode);
     const sku = normalizeSku(rawSku);
     const locations = matchRegion(
@@ -127,7 +127,7 @@ async function runResourceCheckAction(
 ): Promise<void> {
   let jsonErrors = Boolean(opts.json);
   try {
-    const mode = resolveOutputMode(opts, { allowValue: true });
+    const mode = resolveOutputMode(opts, { allowValue: true, command: "check resource" });
     jsonErrors = isJsonOutput(mode);
     const locations = matchRegion(
       await listLocations({

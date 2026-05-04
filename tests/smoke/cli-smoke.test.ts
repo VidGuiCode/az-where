@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -17,6 +17,13 @@ const PKG_VERSION = (
 
 function run(args: string[]): string {
   return execFileSync(process.execPath, [CLI_PATH, ...args], {
+    encoding: "utf-8",
+    env: { ...process.env, NO_COLOR: "1", CI: "1" },
+  });
+}
+
+function runFail(args: string[]) {
+  return spawnSync(process.execPath, [CLI_PATH, ...args], {
     encoding: "utf-8",
     env: { ...process.env, NO_COLOR: "1", CI: "1" },
   });
@@ -148,5 +155,15 @@ describe("CLI smoke tests", () => {
   it("skus and geos expose --refresh", () => {
     expect(run(["skus", "--help"])).toContain("--refresh");
     expect(run(["geos", "--help"])).toContain("--refresh");
+  });
+
+  it("rejects unsupported output modes before Azure calls", () => {
+    const geos = runFail(["geos", "-o", "value"]);
+    expect(geos.status).toBe(3);
+    expect(geos.stderr).toContain("--output value is not supported for geos");
+
+    const check = runFail(["check", "vm", "B1s", "--region", "westeurope", "-o", "name"]);
+    expect(check.status).toBe(3);
+    expect(check.stderr).toContain("--output name is not supported for check vm");
   });
 });
