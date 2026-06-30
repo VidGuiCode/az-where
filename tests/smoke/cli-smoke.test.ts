@@ -50,6 +50,7 @@ describe("CLI smoke tests", () => {
       "quota",
       "geos",
       "skus",
+      "resources",
       "suggest",
       "available",
       "availability",
@@ -150,6 +151,16 @@ describe("CLI smoke tests", () => {
     expect(output).toContain("--os");
     expect(output).toContain("--hours");
     expect(output).toContain("--json");
+  });
+
+  it("resources command exposes discovery filters and output flags", () => {
+    const output = run(["resources", "--help"]);
+    expect(output).toContain("--namespace");
+    expect(output).toContain("--grep");
+    expect(output).toContain("--name");
+    expect(output).toContain("--json");
+    expect(output).toContain("--output");
+    expect(output).toContain("--refresh");
   });
 
   it("skus and geos expose --refresh", () => {

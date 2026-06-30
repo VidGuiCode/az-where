@@ -117,16 +117,21 @@ Planned improvements and features for upcoming releases. This is a living docume
 - Add smoke coverage for invalid output-mode combinations that should fail before Azure calls.
 - Live-smoke canonical generic resource checks against ARM provider metadata and policy-restricted subscriptions.
 
+### 0.4.3 - Resource Discovery And Release Automation
+
+- `azw resources` to discover Azure resource types, with `--namespace` and `--grep` filters and `table`/`json`/`name` output, reusing the cached provider catalog.
+- Tag-triggered GitHub Action that builds, tests, packs, and publishes the release tarball on every `v*` tag push.
+
 ## Planned
 
-### 0.4.3 - VM Comparison
+### 0.4.4 - VM Comparison
 
 - `azw compare vm B1s,B2s,D2s_v5 --eu`.
 - Matrix-style view across regions and VM sizes.
 - JSON shape for agents/scripts to choose fallback sizes automatically.
 - Keep compare VM-only in this release; do not add resource comparison yet.
 
-### 0.4.4 - Check Explanations And JSON Contracts
+### 0.4.5 - Check Explanations And JSON Contracts
 
 - Add evidence-based blocker details for `azw check vm` and `azw check resource`.
 - Improve human explanations for `POLICY_DENIED`, `BLOCKED_FOR_SUB`, `QUOTA_FULL`, `SKU_NOT_OFFERED`, `QUOTA_UNKNOWN`, `RESOURCE_SUPPORTED`, and `RESOURCE_NOT_SUPPORTED`.
@@ -139,7 +144,7 @@ Planned improvements and features for upcoming releases. This is a living docume
   - `suggest vm`
 - Keep explanations factual; do not claim full deployability for generic resource checks.
 
-### 0.4.5 - IaC Preflight Foundation
+### 0.4.6 - IaC Preflight Foundation
 
 - `azw verify <file.tf | file.bicep>`.
 - Detect `location + sku` pairs before deployment, starting with VM resources.

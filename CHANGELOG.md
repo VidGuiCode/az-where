@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.3
+
+### Resource Discovery
+
+- Add `azw resources` to list Azure resource types you can pass to `availability resource` / `check resource`, with `--namespace` and `--grep` filters and `table` / `json` / `name` output.
+- Reuse the provider catalog that resource scans already download and cache, so discovery adds no new Azure round-trips on a warm cache.
+- Reverse-map friendly aliases (e.g. `storage-account`) onto their Azure resource types in the listing.
+
+### Release Automation
+
+- Add a tag-triggered GitHub Action that typechecks, tests, packs, and publishes the release tarball on every `v*` tag push, so releases no longer depend on a manual local pack-and-upload.
+
 ## 0.4.2
 
 ### Output Hardening

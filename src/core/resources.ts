@@ -85,6 +85,76 @@ export async function scanResourceAvailability(opts: {
   return { resolved, rows: sortResourceVerdicts(rows), elapsedMs: Date.now() - started };
 }
 
+export interface ResourceTypeEntry {
+  namespace: string;
+  /** Full Azure resource type, e.g. "Microsoft.Storage/storageAccounts". */
+  resourceType: string;
+  typePath: string;
+  /** Friendly alias if this type has one, else null. */
+  alias: string | null;
+  /** How many regions advertise this type (0 means no per-region data). */
+  locationCount: number;
+}
+
+export interface ListResourceTypesFilter {
+  namespace?: string;
+  grep?: string;
+}
+
+const TYPE_TO_ALIAS: Record<string, string> = Object.fromEntries(
+  Object.entries(RESOURCE_ALIASES).map(([alias, type]) => [type.toLowerCase(), alias]),
+);
+
+/** Flatten the ARM provider catalog into one row per resource type. */
+export function flattenResourceTypes(providers: AzProvider[]): ResourceTypeEntry[] {
+  const out: ResourceTypeEntry[] = [];
+  for (const provider of providers) {
+    for (const rt of provider.resourceTypes ?? []) {
+      const resourceType = `${provider.namespace}/${rt.resourceType}`;
+      out.push({
+        namespace: provider.namespace,
+        resourceType,
+        typePath: rt.resourceType,
+        alias: TYPE_TO_ALIAS[resourceType.toLowerCase()] ?? null,
+        locationCount: rt.locations?.length ?? 0,
+      });
+    }
+  }
+  return out;
+}
+
+/** Apply `--namespace` (exact, case-insensitive) and `--grep` (substring) filters. */
+export function filterResourceTypes(
+  entries: ResourceTypeEntry[],
+  filter: ListResourceTypesFilter = {},
+): ResourceTypeEntry[] {
+  const ns = filter.namespace?.trim().toLowerCase();
+  const grep = filter.grep?.trim().toLowerCase();
+  return entries
+    .filter((e) => (ns ? e.namespace.toLowerCase() === ns : true))
+    .filter((e) => (grep ? e.resourceType.toLowerCase().includes(grep) : true))
+    .sort((a, b) => a.resourceType.localeCompare(b.resourceType));
+}
+
+/**
+ * Discover resource types from the ARM provider catalog. Reuses the same
+ * `/providers` data the resource availability scan already downloads (and
+ * caches), so this adds no new Azure round-trips on a warm cache.
+ */
+export async function listResourceTypes(opts: {
+  namespace?: string;
+  grep?: string;
+  refresh?: boolean;
+}): Promise<ResourceTypeEntry[]> {
+  const providers = await armList<AzProvider>("/providers?api-version=2021-04-01", {
+    refresh: Boolean(opts.refresh),
+  });
+  return filterResourceTypes(flattenResourceTypes(providers), {
+    namespace: opts.namespace,
+    grep: opts.grep,
+  });
+}
+
 export function sortResourceVerdicts(
   rows: ResourceAvailabilityVerdict[],
 ): ResourceAvailabilityVerdict[] {

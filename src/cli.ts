@@ -7,6 +7,7 @@ import { createPickCommand } from "./commands/pick.js";
 import { createQuotaCommand } from "./commands/quota.js";
 import { createGeosCommand } from "./commands/geos.js";
 import { createSkusCommand } from "./commands/skus.js";
+import { createResourcesCommand } from "./commands/resources.js";
 import { createSuggestCommand } from "./commands/suggest.js";
 import { createAvailableCommand } from "./commands/available.js";
 import { createAvailabilityCommand } from "./commands/availability.js";
@@ -50,6 +51,8 @@ function splash(version: string): string {
     azw where                 Current Azure subscription / user
     azw geos                  Discover what --geography values your sub sees
     azw skus --eu --family B  Discover VM SKU names (family, vCPU, RAM)
+    azw resources --grep postgres
+                              Discover Azure resource types to check
     azw update                Check for a newer release + ask before installing
 
   ${colorEnabled() ? c.bold("Global flags:") : "Global flags:"}
@@ -103,6 +106,7 @@ program.addCommand(createRegionsCommand());
 program.addCommand(createQuotaCommand());
 program.addCommand(createGeosCommand());
 program.addCommand(createSkusCommand());
+program.addCommand(createResourcesCommand());
 program.addCommand(createAvailableCommand());
 program.addCommand(createPriceCommand());
 program.addCommand(createUpdateCommand(pkg.version));
