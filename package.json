@@ -1,6 +1,6 @@
 {
   "name": "az-where",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Unofficial Azure availability discovery CLI",
   "license": "MIT",
   "private": false,
@@ -25,6 +25,7 @@
     "clean": "powershell -NoProfile -Command \"if (Test-Path dist) { Remove-Item -Recurse -Force dist }\"",
     "dev": "bun src/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build",
     "test": "vitest run",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",

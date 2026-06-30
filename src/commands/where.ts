@@ -17,7 +17,7 @@ export function createWhereCommand(): Command {
     .action(async (opts) => {
       let jsonErrors = Boolean(opts.json);
       try {
-        const mode = resolveOutputMode(opts);
+        const mode = resolveOutputMode(opts, { command: "where" });
         jsonErrors = isJsonOutput(mode);
         const spinner = new Spinner("Checking Azure account", 3);
         let account: AzAccount;

@@ -8,6 +8,7 @@ import {
   addJsonCompatibilityOptions,
   addOutputOption,
   isJsonOutput,
+  isScriptOutput,
   resolveOutputMode,
 } from "../core/outputMode.js";
 import { loadPolicyCheck, type PolicySummary } from "../core/policy.js";
@@ -77,7 +78,10 @@ export async function runResourceAvailabilityAction(
 ): Promise<void> {
   let jsonErrors = Boolean(opts.json);
   try {
-    const mode = resolveOutputMode(opts, { allowName: true });
+    const mode = resolveOutputMode(opts, {
+      allowName: true,
+      command: "availability resource",
+    });
     jsonErrors = isJsonOutput(mode);
     if (!target.trim()) {
       throw new ValidationError(
@@ -154,7 +158,7 @@ export async function runResourceAvailabilityAction(
       return;
     }
 
-    printPolicyWarning(policy.summary);
+    printPolicyWarning(policy.summary, mode);
     printTable(resourceRows(rows), ["REGION", "GEO", "LOCATION", "VERDICT", "CONFIDENCE"]);
     const hidden = rows.filter((r) => r.verdict === "RESOURCE_NOT_SUPPORTED").length;
     if (hidden > 0) {
@@ -201,7 +205,11 @@ function resourceRows(rows: ResourceAvailabilityVerdict[]): string[][] {
   ]);
 }
 
-function printPolicyWarning(policy: PolicySummary): void {
+function printPolicyWarning(
+  policy: PolicySummary,
+  mode: ReturnType<typeof resolveOutputMode>,
+): void {
+  if (isScriptOutput(mode)) return;
   if (!policy.error) return;
   process.stderr.write(`Azure Policy was not checked: ${policy.error}\n`);
 }

@@ -11,6 +11,7 @@ import {
   addJsonCompatibilityOptions,
   addOutputOption,
   isJsonOutput,
+  isScriptOutput,
   resolveOutputMode,
 } from "../core/outputMode.js";
 
@@ -62,7 +63,7 @@ export async function runRegionsAction(
 ): Promise<void> {
   let jsonErrors = Boolean(opts.json);
   try {
-    const mode = resolveOutputMode(opts, { allowName: true });
+    const mode = resolveOutputMode(opts, { allowName: true, command: kind });
     jsonErrors = isJsonOutput(mode);
     const rawSku = opts.sku ?? positional;
     if (!rawSku) throw new ValidationError("Missing SKU. Try: azw availability vm B1s --eu");
@@ -109,7 +110,7 @@ export async function runRegionsAction(
     const rows = sortVerdicts(raw);
 
     if (mode === "name") {
-      printPolicyWarning(policy.summary);
+      printPolicyWarning(policy.summary, mode);
       const ready = rows.filter((r) => r.verdict === "AVAILABLE");
       for (const r of ready) console.log(r.region);
       if (ready.length === 0) process.exit(1);
@@ -138,7 +139,7 @@ export async function runRegionsAction(
 
     const hidden = opts.all ? [] : rows.filter((r) => r.verdict === "SKU_NOT_OFFERED");
     const visible = opts.all ? rows : rows.filter((r) => r.verdict !== "SKU_NOT_OFFERED");
-    printPolicyWarning(policy.summary);
+    printPolicyWarning(policy.summary, mode);
     printVerdictTable(visible);
     if (hidden.length > 0) {
       const note = `+ ${hidden.length} regions where Azure doesn't offer ${sku} (use --all to show)`;
@@ -151,7 +152,11 @@ export async function runRegionsAction(
   }
 }
 
-function printPolicyWarning(policy: PolicySummary): void {
+function printPolicyWarning(
+  policy: PolicySummary,
+  mode: ReturnType<typeof resolveOutputMode>,
+): void {
+  if (isScriptOutput(mode)) return;
   if (!policy.error) return;
   process.stderr.write(`Azure Policy was not checked: ${policy.error}\n`);
 }

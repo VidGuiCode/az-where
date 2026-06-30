@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.2
+
+### Output Hardening
+
+- Tighten `--output` / `-o` validation so `value` and `name` modes are accepted only on commands where they have a stable script-safe meaning.
+- Improve unsupported output-mode errors with command-specific supported-mode lists.
+- Treat compact shorthand forms such as `-ocompact` as machine output so progress, color, and update banners stay suppressed.
+- Keep policy warning noise out of script output modes while preserving policy metadata in JSON responses.
+- Add resolver and CLI smoke tests for output-mode aliases and unsupported combinations.
+- Smoke-test canonical generic resource checks against live ARM provider metadata and Azure Policy behavior.
+
+### Self-Update Fix
+
+- Fix `azw update` failing with `spawn EINVAL` on Windows under Node 18.20 / 20.12 / 22+, where spawning `npm.cmd` without a shell is blocked. The install now runs through a shell on Windows only, and the release tag is validated as plain semver before npm is invoked.
+
+### Reliability Foundation
+
+- Build automatically before the test run via a `pretest` hook so smoke tests can never pass against a stale `dist/`.
+- Lock the machine-facing contract with tests: the JSON error envelope (`status`, `code`, `message`, `details`) and the per-error exit codes are now pinned against accidental drift.
+- Gate the live ARM smoke tests behind `AZW_LIVE=1` so they run on demand against a logged-in subscription without affecting the default test run.
+
 ## 0.4.1
 
 ### Syntax Polish

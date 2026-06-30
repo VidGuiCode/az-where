@@ -22,7 +22,7 @@ export function createPriceCommand(): Command {
     .action(async (positional: string | undefined, opts) => {
       let jsonErrors = Boolean(opts.json);
       try {
-        const mode = resolveOutputMode(opts);
+        const mode = resolveOutputMode(opts, { command: "price" });
         jsonErrors = isJsonOutput(mode);
         const rawSku = opts.sku ?? positional;
         if (!rawSku) {

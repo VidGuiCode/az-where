@@ -28,6 +28,9 @@ function outputModeArg(): string | null {
     if (arg.startsWith("-o=")) {
       return arg.slice("-o=".length).trim().toLowerCase();
     }
+    if (arg.startsWith("-o") && arg.length > 2) {
+      return arg.slice(2).trim().toLowerCase();
+    }
   }
   return null;
 }

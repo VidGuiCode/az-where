@@ -116,7 +116,9 @@ Policy assignments are not cached. Policy remains live because it can directly d
 - Human table output uses ANSI-aware padding and color when supported.
 - `--json` prints structured JSON and suppresses progress.
 - `--compact` prints one-line JSON.
-- `--name` prints region names only where supported.
+- `--name` / `-o name` prints one name per line only where supported.
+- `-o value` prints exactly one script value only where supported.
+- Unsupported `value` and `name` combinations fail during command validation before any Azure calls.
 
 Progress uses stderr and switches between live redraw on TTY and log lines in CI/non-TTY. Machine-readable modes stay quiet.
 

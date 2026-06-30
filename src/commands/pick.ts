@@ -50,7 +50,7 @@ export async function runPickAction(
 ): Promise<void> {
   let jsonErrors = Boolean(opts.json);
   try {
-    const mode = resolveOutputMode(opts, { allowValue: true });
+    const mode = resolveOutputMode(opts, { allowValue: true, command: "pick" });
     jsonErrors = isJsonOutput(mode);
     if (!rawSku) throw new ValidationError("Missing SKU. Try: azw pick vm B1s --eu");
     const sku = normalizeSku(rawSku);

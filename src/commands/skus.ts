@@ -24,7 +24,9 @@ import {
  */
 export function createSkusCommand(): Command {
   const cmd = new Command("skus")
-    .description("Discover VM SKU names (family, vCPU, RAM). Input for `azw availability vm <sku>`.")
+    .description(
+      "Discover VM SKU names (family, vCPU, RAM). Input for `azw availability vm <sku>`.",
+    )
     .option("--region <name>", "Scope to a single region (fast path, ~2-3s)")
     .option("--eu", "Only SKUs offered in an EU region")
     .option("--us", "Only SKUs offered in a US region")
@@ -35,7 +37,7 @@ export function createSkusCommand(): Command {
     .action(async (opts) => {
       let jsonErrors = Boolean(opts.json);
       try {
-        const mode = resolveOutputMode(opts, { allowName: true });
+        const mode = resolveOutputMode(opts, { allowName: true, command: "skus" });
         jsonErrors = isJsonOutput(mode);
         // Single-region fast path — skip the 35s subscription catalog and hit
         // the location-scoped skus endpoint, which returns in ~2-3s.
