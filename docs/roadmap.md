@@ -122,13 +122,14 @@ Planned improvements and features for upcoming releases. This is a living docume
 - `azw resources` to discover Azure resource types, with `--namespace` and `--grep` filters and `table`/`json`/`name` output, reusing the cached provider catalog.
 - Tag-triggered GitHub Action that builds, tests, packs, and publishes the release tarball on every `v*` tag push.
 
-## Planned
-
 ### 0.4.4 - Environment Doctor
 
 - `azw doctor` to verify local prerequisites before any Azure scan: Azure CLI installed, a supported `az` version, an active login, a default subscription, and a mintable ARM token.
-- Clear pass/fail checklist with install and `az login` hints, `-o json` for scripts, and a non-zero exit when a prerequisite is missing so CI can gate on it.
+- Clear pass/fail checklist with install and `az login` hints, `-o json` for scripts, and a distinct non-zero exit code (`4`) when a prerequisite is missing so CI can gate on it.
 - Surfaces the existing `AzNotInstalledError` / `AzNotLoggedInError` signals up front instead of only on the first failing command. Top-level diagnostic command, outside the verb/kind grammar (like `update`).
+- Token checks report only expiry and tenant metadata; the bearer token itself never appears in any doctor output.
+
+## Planned
 
 ### 0.4.5 - VM Comparison
 

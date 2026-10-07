@@ -89,3 +89,36 @@ describe.runIf(LIVE)("live ARM resource availability", () => {
     expect(err.code).toBe("ValidationError");
   });
 });
+
+describe.runIf(LIVE)("live doctor", () => {
+  it("doctor -o json reports the documented checklist shape", () => {
+    const res = runJson(["doctor", "-o", "json"]);
+    // Exit 0 (healthy environment) or 4 (a prerequisite failed) are both
+    // valid doctor outcomes; anything else is an unexpected crash.
+    expect([0, 4]).toContain(res.status);
+
+    const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(payload.schemaVersion).toBe(1);
+    expect(payload.kind).toBe("doctor");
+    expect(typeof payload.ok).toBe("boolean");
+    expect(typeof payload.passed).toBe("number");
+    expect(typeof payload.failed).toBe("number");
+    expect(typeof payload.skipped).toBe("number");
+
+    const checks = payload.checks as Array<Record<string, unknown>>;
+    expect(checks.map((c) => c.id)).toEqual([
+      "az-installed",
+      "az-version",
+      "logged-in",
+      "default-subscription",
+      "arm-token",
+    ]);
+    for (const c of checks) {
+      expect(["pass", "fail", "skip"]).toContain(c.status);
+      expect(typeof c.label).toBe("string");
+    }
+    expect(payload.ok).toBe(payload.failed === 0);
+    // The bearer token must never appear in doctor output.
+    expect(res.stdout).not.toMatch(/accessToken/i);
+  });
+});

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.4
+
+### Environment Doctor
+
+- Add `azw doctor` to verify local prerequisites before any Azure scan: Azure CLI installed, a supported `az` version (minimum 2.11.0), an active login, a default subscription, and a mintable ARM token.
+- Render a clear pass/fail checklist; failed checks carry an actionable hint (install URL, `az login`, `az account set`, `az upgrade`), and checks that cannot run are shown as skipped with the reason.
+- Add `-o json` / `-o compact` output with a stable per-check shape (`id`, `label`, `status`, `detail`, `hint`, optional `fields`) plus top-level `ok`, `passed`, `failed`, and `skipped` counters for scripts and agents.
+- Exit with code `4` when any prerequisite fails so CI can gate on doctor without parsing output; `0` means the environment is ready to scan.
+- Never print or serialize the bearer token: the ARM token check reports only mint success, expiry, and tenant metadata.
+- `value` and `name` output modes are rejected as validation errors before any Azure calls, matching the command-standard opt-in rule.
+
 ## 0.4.3
 
 ### Resource Discovery

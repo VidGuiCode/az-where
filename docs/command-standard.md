@@ -189,6 +189,21 @@ azw check storage --kind StorageV2 --replication LRS --region westeurope
 
 Until then, keep it under `resource`.
 
+## Diagnostic Commands
+
+The verb/kind grammar governs Azure availability discovery. A small set of top-level diagnostic commands sit outside it because they describe the tool or the local environment, not a target resource:
+
+| Command | Purpose |
+|---|---|
+| `azw update` | Check for and install a newer az-where release |
+| `azw doctor` | Pass/fail checklist of local prerequisites: az installed, supported version, login, default subscription, ARM token |
+
+Rules for this family:
+
+- They support the standard output modes where meaningful (`doctor` supports `table`, `json`, and `compact`) and reject opt-in modes (`value`, `name`) as validation errors.
+- `doctor` exits `4` when any prerequisite fails, distinct from auth (`2`) and validation (`3`), so CI can gate on the environment without parsing output.
+- `doctor` never prints credentials; the ARM token check reports only expiry and tenant metadata.
+
 ## Scope Flags
 
 Scope flags should be consistent across commands:

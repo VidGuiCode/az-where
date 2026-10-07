@@ -57,6 +57,7 @@ describe("CLI smoke tests", () => {
       "check",
       "price",
       "update",
+      "doctor",
     ]) {
       expect(output).toContain(cmd);
     }
@@ -176,5 +177,23 @@ describe("CLI smoke tests", () => {
     const check = runFail(["check", "vm", "B1s", "--region", "westeurope", "-o", "name"]);
     expect(check.status).toBe(3);
     expect(check.stderr).toContain("--output name is not supported for check vm");
+  });
+
+  it("doctor command has a help screen with output flags", () => {
+    const output = run(["doctor", "--help"]);
+    expect(output).toContain("doctor");
+    expect(output).toContain("prerequisites");
+    expect(output).toContain("--output");
+    expect(output).toContain("--json");
+  });
+
+  it("doctor rejects value and name modes before Azure calls", () => {
+    const value = runFail(["doctor", "-o", "value"]);
+    expect(value.status).toBe(3);
+    expect(value.stderr).toContain("--output value is not supported for doctor");
+
+    const name = runFail(["doctor", "-o", "name"]);
+    expect(name.status).toBe(3);
+    expect(name.stderr).toContain("--output name is not supported for doctor");
   });
 });

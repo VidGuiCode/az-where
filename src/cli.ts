@@ -14,6 +14,7 @@ import { createAvailabilityCommand } from "./commands/availability.js";
 import { createCheckCommand } from "./commands/check.js";
 import { createPriceCommand } from "./commands/price.js";
 import { createUpdateCommand, runUpdateFlow } from "./commands/update.js";
+import { createDoctorCommand } from "./commands/doctor.js";
 import { configureHelp } from "./core/help.js";
 import { c, colorEnabled } from "./core/color.js";
 import { looksLikeSku, normalizeSku } from "./core/sku.js";
@@ -53,6 +54,7 @@ function splash(version: string): string {
     azw skus --eu --family B  Discover VM SKU names (family, vCPU, RAM)
     azw resources --grep postgres
                               Discover Azure resource types to check
+    azw doctor                Check prerequisites: az install, login, token
     azw update                Check for a newer release + ask before installing
 
   ${colorEnabled() ? c.bold("Global flags:") : "Global flags:"}
@@ -110,6 +112,7 @@ program.addCommand(createResourcesCommand());
 program.addCommand(createAvailableCommand());
 program.addCommand(createPriceCommand());
 program.addCommand(createUpdateCommand(pkg.version));
+program.addCommand(createDoctorCommand());
 
 configureHelp(program);
 
