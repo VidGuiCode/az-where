@@ -55,6 +55,7 @@ describe("CLI smoke tests", () => {
       "available",
       "availability",
       "check",
+      "compare",
       "price",
       "update",
       "doctor",
@@ -128,6 +129,55 @@ describe("CLI smoke tests", () => {
     expect(output).toContain("resource");
     expect(run(["check", "vm", "--help"])).toContain("--region");
     expect(run(["check", "resource", "--help"])).toContain("--output");
+  });
+
+  it("compare command exposes the vm matrix subcommand", () => {
+    const output = run(["compare", "--help"]);
+    expect(output).toContain("vm");
+    const vmHelp = run(["compare", "vm", "--help"]);
+    expect(vmHelp).toContain("--region");
+    expect(vmHelp).toContain("--eu");
+    expect(vmHelp).toContain("--us");
+    expect(vmHelp).toContain("--asia");
+    expect(vmHelp).toContain("--geography");
+    expect(vmHelp).toContain("--no-policy");
+    expect(vmHelp).toContain("--refresh");
+    expect(vmHelp).toContain("--output");
+    expect(vmHelp).toContain("--json");
+  });
+
+  it("compare vm rejects value and name output modes before Azure calls", () => {
+    const value = runFail(["compare", "vm", "B1s,B2s", "-o", "value"]);
+    expect(value.status).toBe(3);
+    expect(value.stderr).toContain("--output value is not supported for compare vm");
+
+    const name = runFail(["compare", "vm", "B1s,B2s", "-o", "name"]);
+    expect(name.status).toBe(3);
+    expect(name.stderr).toContain("--output name is not supported for compare vm");
+  });
+
+  it("compare vm validates the SKU list before Azure calls", () => {
+    const empty = runFail(["compare", "vm", ""]);
+    expect(empty.status).toBe(3);
+    expect(empty.stderr).toContain("Missing SKU list");
+
+    const gap = runFail(["compare", "vm", "B1s,,B2s"]);
+    expect(gap.status).toBe(3);
+    expect(gap.stderr).toContain("empty entry");
+
+    const tooMany = runFail([
+      "compare",
+      "vm",
+      Array.from({ length: 31 }, (_, i) => `B${i}s`).join(","),
+    ]);
+    expect(tooMany.status).toBe(3);
+    expect(tooMany.stderr).toContain("up to 30 SKUs");
+  });
+
+  it("compare vm rejects --region combined with geography flags before Azure calls", () => {
+    const res = runFail(["compare", "vm", "B1s,B2s", "--region", "westeurope", "--eu"]);
+    expect(res.status).toBe(3);
+    expect(res.stderr).toContain("--region scopes to a single region");
   });
 
   it("available command exists and has deployability filters", () => {

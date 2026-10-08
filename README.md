@@ -4,7 +4,7 @@
 
 **What and where can my Azure subscription deploy?**
 
-[![Release](https://img.shields.io/badge/release-v0.4.4-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
+[![Release](https://img.shields.io/badge/release-v0.4.5-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6?logo=typescript&logoColor=white)](tsconfig.json)
@@ -32,7 +32,7 @@ az login
 Install the current release:
 
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.4.4/az-where-0.4.4.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.4.5/az-where-0.4.5.tgz
 ```
 
 Or build from source:
@@ -61,6 +61,7 @@ Two binaries are installed: `azw` and `az-where`. They are the same tool.
 | Check a VM size globally | `azw availability vm B1s` |
 | Check only Europe / US / Asia Pacific | `azw availability vm B1s --eu` / `--us` / `--asia` |
 | Check one VM size in one region | `azw check vm B1s --region westeurope` |
+| Compare several VM sizes at once | `azw compare vm B1s,B2s,D2s_v5 --eu` |
 | Print one deployable region | `azw pick vm B1s` |
 | Get a recommended region with a reason | `azw suggest vm B1s --eu --near Luxembourg` |
 | Check generic resource availability | `azw availability resource storage-account --eu` |
@@ -102,6 +103,8 @@ azw check vm <sku> --region <name>
                          # one-region VM deployability verdict
 azw check resource <alias-or-type> --region <name>
                          # one-region generic resource availability verdict
+azw compare vm <sku-list>
+                         # region × size deployability matrix (e.g. B1s,B2s,D2s_v5)
 azw pick vm <sku>        # one deployable region name for scripts
 azw suggest vm <sku>     # recommended region with a short explanation
 azw regions <sku>        # compatibility shortcut for VM availability
@@ -186,7 +189,10 @@ For machine-readable output:
 azw availability vm B1s --eu -o compact
 azw check vm B1s --region westeurope -o json
 azw availability resource storage-account --eu -o json
+azw compare vm B1s,B2s,D2s_v5 --eu -o json
 ```
+
+`compare vm` emits a stable matrix contract for choosing fallback sizes: a top-level `regions` axis plus one result per requested SKU with `deployableRegions`, `deployableCount`, and `verdictCounts`, so scripts can walk the SKU order and pick the first that deploys in a target region.
 
 `value` and `name` are intentionally narrower than JSON: they are only enabled on commands where the output has a stable single-value or one-name-per-line meaning. Unsupported combinations fail as validation errors before any Azure calls.
 

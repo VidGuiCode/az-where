@@ -21,6 +21,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(__dirname, "../../dist/cli.js");
 
 const RESOURCE_VERDICTS = new Set(["RESOURCE_SUPPORTED", "RESOURCE_NOT_SUPPORTED", "POLICY_DENIED"]);
+const VM_VERDICTS = new Set([
+  "AVAILABLE",
+  "FULL",
+  "SKU_NOT_OFFERED",
+  "BLOCKED_FOR_SUB",
+  "POLICY_DENIED",
+  "QUOTA_UNKNOWN",
+]);
 
 function runJson(args: string[]) {
   const res = spawnSync(process.execPath, [CLI_PATH, ...args], {
@@ -87,6 +95,62 @@ describe.runIf(LIVE)("live ARM resource availability", () => {
     const err = JSON.parse(res.stderr) as Record<string, unknown>;
     expect(err.status).toBe("error");
     expect(err.code).toBe("ValidationError");
+  });
+});
+
+describe.runIf(LIVE)("live compare vm", () => {
+  it("compare vm across EU returns the documented matrix contract", () => {
+    const res = runJson([
+      "compare",
+      "vm",
+      "Standard_B1s,Standard_B2s,Standard_D2s_v5",
+      "--eu",
+      "-o",
+      "json",
+    ]);
+    // Exit 0 (something deploys) or 1 (nothing deploys for any SKU) are both
+    // valid outcomes; anything else means auth/usage/install failure.
+    expect([0, 1]).toContain(res.status);
+
+    const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(payload.schemaVersion).toBe(1);
+    expect(payload.kind).toBe("compare");
+    expect(payload.resourceKind).toBe("vm");
+    expect(payload.confidence).toBe("deployability");
+    expect(payload.skus).toEqual(["Standard_B1s", "Standard_B2s", "Standard_D2s_v5"]);
+
+    const regions = payload.regions as string[];
+    expect(Array.isArray(regions)).toBe(true);
+    expect(regions.length).toBeGreaterThan(0);
+
+    const results = payload.results as Array<Record<string, unknown>>;
+    expect(results.map((r) => r.sku)).toEqual(payload.skus);
+    for (const result of results) {
+      const cells = result.regions as Array<Record<string, unknown>>;
+      // Every per-SKU row aligns with the shared region axis.
+      expect(cells.map((cell) => cell.region)).toEqual(regions);
+      for (const cell of cells) {
+        expect(VM_VERDICTS.has(String(cell.verdict))).toBe(true);
+      }
+      const deployable = result.deployableRegions as string[];
+      expect((result.deployableCount as number)).toBe(deployable.length);
+      for (const name of deployable) expect(regions).toContain(name);
+    }
+
+    // Exit code contract: 0 iff at least one SKU deploys somewhere.
+    const anyDeployable = results.some((r) => (r.deployableCount as number) > 0);
+    expect(res.status).toBe(anyDeployable ? 0 : 1);
+  });
+
+  it("compare vm in a single region collapses the matrix to one row", () => {
+    const res = runJson(["compare", "vm", "Standard_B1s,Standard_B2s", "--region", "westeurope", "-o", "json"]);
+    expect([0, 1]).toContain(res.status);
+
+    const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(payload.region).toBe("westeurope");
+    expect(payload.regions).toEqual(["westeurope"]);
+    const results = payload.results as Array<Record<string, unknown>>;
+    expect(results.every((r) => (r.regions as unknown[]).length === 1)).toBe(true);
   });
 });
 

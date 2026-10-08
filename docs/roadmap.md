@@ -129,14 +129,17 @@ Planned improvements and features for upcoming releases. This is a living docume
 - Surfaces the existing `AzNotInstalledError` / `AzNotLoggedInError` signals up front instead of only on the first failing command. Top-level diagnostic command, outside the verb/kind grammar (like `update`).
 - Token checks report only expiry and tenant metadata; the bearer token itself never appears in any doctor output.
 
-## Planned
-
 ### 0.4.5 - VM Comparison
 
-- `azw compare vm B1s,B2s,D2s_v5 --eu`.
-- Matrix-style view across regions and VM sizes.
-- JSON shape for agents/scripts to choose fallback sizes automatically.
-- Keep compare VM-only in this release; do not add resource comparison yet.
+- `azw compare vm B1s,B2s,D2s_v5 --eu` renders a region × size matrix of deployability verdicts (policy, subscription restrictions, SKU offers, and live vCPU quota per cell).
+- Comparing N sizes costs the same ARM calls as a single-SKU scan: the per-region SKU catalog covers every requested size.
+- Stable JSON contract for agents and scripts choosing fallback sizes: shared `regions` axis plus one result per SKU with `deployableRegions`, `deployableCount`, and `verdictCounts`.
+- Human table sorts regions where every requested size deploys to the top, then by per-region coverage, with a per-SKU deployability summary.
+- Supports `--output table|json|compact`; `value` and `name` are rejected as validation errors because a comparison has no single script value.
+- Scope flags match `availability vm` (`--region`, `--eu`, `--us`, `--asia`, `--geography`, `--no-policy`, `--refresh`).
+- Compare stays VM-only in this release; resource comparison is deferred.
+
+## Planned
 
 ### 0.4.6 - Check Explanations And JSON Contracts
 

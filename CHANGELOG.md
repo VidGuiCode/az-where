@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.5
+
+### VM Comparison
+
+- Add `azw compare vm B1s,B2s,D2s_v5 --eu` for a matrix of deployability verdicts across regions and VM sizes, combining Azure Policy, subscription restrictions, SKU offers, and live vCPU quota per cell.
+- Cost stays flat in the number of sizes: the per-region SKU catalog ARM call already lists every offered size, so comparing several SKUs makes the same calls as a single-SKU availability scan.
+- Stable JSON contract for agents and scripts choosing fallback sizes: a shared `regions` axis plus one result per SKU (in the order requested) carrying `family`, `vcpus`, `memoryGiB`, per-region verdict cells, `deployableRegions`, `deployableCount`, and `verdictCounts`.
+- Human table puts regions where every requested size deploys first, then ranks by how many sizes deploy there; a legend and a per-SKU `deployable in X/Y regions` summary explain the glyphs.
+- `--output table|json|compact` supported; `value` and `name` are rejected as validation errors before any Azure call because a comparison has no single script value.
+- Scope and scan flags match `availability vm`: `--region`, `--eu`, `--us`, `--asia`, `--geography`, `--concurrency`, `--no-policy`, `--refresh`.
+- SKU lists are normalized (`B1s` → `Standard_B1s`), deduplicated, capped at 30 sizes per invocation, and validated before Azure calls.
+- Compare is VM-only in this release; resource comparison is deferred (see roadmap 0.4.6+).
+
 ## 0.4.4
 
 ### Environment Doctor

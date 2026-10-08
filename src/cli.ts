@@ -12,6 +12,7 @@ import { createSuggestCommand } from "./commands/suggest.js";
 import { createAvailableCommand } from "./commands/available.js";
 import { createAvailabilityCommand } from "./commands/availability.js";
 import { createCheckCommand } from "./commands/check.js";
+import { createCompareCommand } from "./commands/compare.js";
 import { createPriceCommand } from "./commands/price.js";
 import { createUpdateCommand, runUpdateFlow } from "./commands/update.js";
 import { createDoctorCommand } from "./commands/doctor.js";
@@ -41,6 +42,8 @@ function splash(version: string): string {
                               Coloured table of EU regions for Standard_B1s
     azw check vm B1s --region westeurope
                               One-region VM deployability verdict
+    azw compare vm B1s,B2s,D2s_v5 --eu
+                              Region × size deployability matrix
     azw pick vm B1s --eu      One region name (for terraform / scripts)
     azw check resource storage-account --region westeurope
                               Generic resource availability check
@@ -102,6 +105,7 @@ program
 program.addCommand(createWhereCommand());
 program.addCommand(createAvailabilityCommand());
 program.addCommand(createCheckCommand());
+program.addCommand(createCompareCommand());
 program.addCommand(createPickCommand());
 program.addCommand(createSuggestCommand());
 program.addCommand(createRegionsCommand());

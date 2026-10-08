@@ -88,6 +88,8 @@ Keep the verb list small.
 
 Do not add new verbs unless an existing verb cannot describe the user intent.
 
+`compare` ships as VM-only (`azw compare vm <sku-list> [scope]`, 0.4.5). It supports `table`, `json`, and `compact`; `value` and `name` are rejected as validation errors because a comparison of several targets has no single script value or one-name-per-line meaning. Resource comparison is deferred until generic resource verdicts mature.
+
 ## Kinds
 
 Start with only:
