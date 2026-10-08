@@ -147,14 +147,15 @@ Planned improvements and features for upcoming releases. This is a living docume
 - Stable JSON shapes documented in `docs/json-contracts.md` for `availability vm`, `availability resource`, `check vm`, `check resource`, `pick vm`, and `suggest vm`, with payload builders (`src/core/payloads.ts`) and contract tests pinning every field name; check payloads carry a top-level `explanation` object.
 - Explanations stayed factual: generic resource checks state availability, not deployability, and never claim full deployability.
 
+### 0.4.7 - IaC Preflight
+
+- `azw verify <files...>` for Terraform (`.tf`) and Bicep (`.bicep`) files: parse every statically-known VM `location + size` pair and check it before `terraform apply` or a Bicep deployment.
+- Verdicts, evidence, and explanations are identical to `azw check vm`; scale-set `capacity` multiplies the vCPU requirement.
+- Dynamic values (`var.location`, interpolation, `resourceGroup().location`) are reported as skipped findings with the raw expression echoed — never guessed. Skips never fail the run: exit `1` only when a checked pair is blocked.
+- Covers Terraform VMs (including legacy `vm_size`) and virtual machine scale sets, plus the Bicep equivalents; generic resource types inside IaC files are deferred until resource verdicts mature.
+- Stable JSON contract with `kind: "verify"`: `files`, `formats`, `summary`, per-pair `results[]` rows carrying source metadata + the pinned verdict row + `explanation`, and a `skipped[]` findings list.
+
 ## Planned
-
-### 0.4.7 - IaC Preflight Foundation
-
-- `azw verify <file.tf | file.bicep>`.
-- Detect `location + sku` pairs before deployment, starting with VM resources.
-- Report deployability, quota, policy, and subscription-blocking issues before `terraform apply` or Bicep deployment.
-- Broaden to generic resource availability checks as the discovery layer matures.
 
 ### Later
 

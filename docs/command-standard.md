@@ -90,6 +90,8 @@ Do not add new verbs unless an existing verb cannot describe the user intent.
 
 `compare` ships as VM-only (`azw compare vm <sku-list> [scope]`, 0.4.5). It supports `table`, `json`, and `compact`; `value` and `name` are rejected as validation errors because a comparison of several targets has no single script value or one-name-per-line meaning. Resource comparison is deferred until generic resource verdicts mature.
 
+`verify` ships as VM-only (`azw verify <files...>`, 0.4.7). It takes one or more `.tf` / `.bicep` file paths — no scope flags, because the regions come from the files. It parses statically-literal `location + size` pairs (VMs and scale sets) and runs each through the same deployability chain as `check vm`. Dynamic values (`var.location`, `"${var.size}"`, `resourceGroup().location`) are reported as skipped findings with the raw expression echoed, never guessed. `value` and `name` are rejected as validation errors. Exit `1` only when a checked pair is blocked; skips and zero-checkable-files runs exit `0` so variable-driven files stay a warning, not a CI gate.
+
 ## Kinds
 
 Start with only:
@@ -351,7 +353,7 @@ Confidence values:
 | `azw check postgres --sku <sku> --region <name>` | Deep PostgreSQL availability check |
 | `azw check aks --node-size <sku> --region <name>` | AKS availability with VM node-size check |
 | `azw check appservice --plan <sku> --region <name>` | App Service plan availability check |
-| `azw verify <file.tf | file.bicep>` | IaC preflight, starting VM-only and broadening over time |
+| `azw verify` beyond VMs | Generic-resource pairs inside IaC files, once resource verdicts mature |
 
 ## Naming Decisions
 

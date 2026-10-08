@@ -6,7 +6,9 @@ import {
   buildCheckVmPayload,
   buildPickPayload,
   buildSuggestPayload,
+  buildVerifyPayload,
 } from "../../src/core/payloads.js";
+import type { IacSkippedResource } from "../../src/core/iac.js";
 import { POLICY_DISABLED } from "../../src/core/policy.js";
 import { classifyResourceLocation, resolveResourceType } from "../../src/core/resources.js";
 import {
@@ -14,6 +16,7 @@ import {
   buildQuotaVerdict,
 } from "../../src/core/scan.js";
 import type { AzLocation, RegionVerdict, ResourceAvailabilityVerdict } from "../../src/core/types.js";
+import { toVerifyRow, type VerifyResultRow } from "../../src/core/verify.js";
 
 /**
  * These tests pin the documented stable JSON contracts (docs/json-contracts.md):
@@ -306,5 +309,147 @@ describe("pick and suggest payload contracts", () => {
       suggestion: null,
     });
     expect(failure.suggested).toBeNull();
+  });
+});
+
+describe("verify payload contracts", () => {
+  const verifyRow: VerifyResultRow = toVerifyRow(
+    {
+      file: "main.tf",
+      line: 14,
+      format: "terraform",
+      resourceType: "azurerm_linux_virtual_machine",
+      resourceName: "vm_linux",
+      sku: "Standard_B1s",
+      locationLiteral: "westeurope",
+      capacity: 1,
+    },
+    vmCheckRow,
+  );
+
+  const skippedFinding: IacSkippedResource = {
+    file: "main.tf",
+    line: 32,
+    format: "terraform",
+    resourceType: "azurerm_windows_virtual_machine",
+    resourceName: "vm_win",
+    reason: "dynamic-location",
+    detail: "azurerm_resource_group.rg.location",
+  };
+
+  it("verify pins the documented top-level fields in order", () => {
+    const payload = buildVerifyPayload({
+      files: ["main.tf"],
+      formats: ["terraform"],
+      scannedAt: "2026-10-08T00:00:00.000Z",
+      elapsedMs: 1200,
+      rows: [verifyRow],
+      skipped: [skippedFinding],
+      vmResourceCount: 2,
+      cache,
+      policy: POLICY_DISABLED,
+    });
+    expect(Object.keys(payload)).toEqual([
+      "schemaVersion",
+      "kind",
+      "resourceKind",
+      "confidence",
+      "files",
+      "formats",
+      "scannedAt",
+      "elapsedMs",
+      "summary",
+      "results",
+      "skipped",
+      "cache",
+      "policy",
+    ]);
+    expect(payload.kind).toBe("verify");
+    expect(payload.resourceKind).toBe("vm");
+    expect(payload.confidence).toBe("deployability");
+  });
+
+  it("verify results carry source metadata, the pinned checks row, and an explanation", () => {
+    const payload = buildVerifyPayload({
+      files: ["main.tf"],
+      formats: ["terraform"],
+      scannedAt: "2026-10-08T00:00:00.000Z",
+      elapsedMs: 1200,
+      rows: [verifyRow],
+      skipped: [],
+      vmResourceCount: 1,
+      cache,
+      policy: POLICY_DISABLED,
+    });
+    expect(Object.keys(payload.results[0]!)).toEqual([
+      "file",
+      "line",
+      "format",
+      "resourceType",
+      "resourceName",
+      "sku",
+      "region",
+      "capacity",
+      "checks",
+      "explanation",
+    ]);
+    // The embedded row keeps the pinned RegionVerdict field order.
+    expect(Object.keys(payload.results[0]!.checks)).toEqual([
+      "region",
+      "displayName",
+      "geographyGroup",
+      "physicalLocation",
+      "skuOffered",
+      "family",
+      "used",
+      "limit",
+      "free",
+      "policyAllowed",
+      "policyReason",
+      "verdict",
+      "requiredVcpus",
+      "skuRestrictions",
+      "familySizesOffered",
+      "errorDetail",
+    ]);
+    expect(payload.results[0]!.explanation.code).toBe(payload.results[0]!.checks.verdict);
+  });
+
+  it("verify summary counts resources, checked pairs, skips, and verdicts", () => {
+    const payload = buildVerifyPayload({
+      files: ["main.tf"],
+      formats: ["terraform"],
+      scannedAt: "2026-10-08T00:00:00.000Z",
+      elapsedMs: 1200,
+      rows: [verifyRow],
+      skipped: [skippedFinding],
+      vmResourceCount: 2,
+      cache,
+      policy: POLICY_DISABLED,
+    });
+    expect(payload.summary).toEqual({
+      resources: 2,
+      checked: 1,
+      skipped: 1,
+      deployableCount: vmCheckRow.verdict === "AVAILABLE" ? 1 : 0,
+      verdictCounts: {
+        AVAILABLE: vmCheckRow.verdict === "AVAILABLE" ? 1 : 0,
+        FULL: 0,
+        SKU_NOT_OFFERED: 0,
+        BLOCKED_FOR_SUB: 0,
+        POLICY_DENIED: 0,
+        QUOTA_UNKNOWN: 0,
+      },
+    });
+    // Skipped findings keep their own shape, separate from verdict rows.
+    expect(Object.keys(payload.skipped[0]!)).toEqual([
+      "file",
+      "line",
+      "format",
+      "resourceType",
+      "resourceName",
+      "reason",
+      "detail",
+    ]);
   });
 });

@@ -56,6 +56,7 @@ describe("CLI smoke tests", () => {
       "availability",
       "check",
       "compare",
+      "verify",
       "price",
       "update",
       "doctor",
@@ -178,6 +179,43 @@ describe("CLI smoke tests", () => {
     const res = runFail(["compare", "vm", "B1s,B2s", "--region", "westeurope", "--eu"]);
     expect(res.status).toBe(3);
     expect(res.stderr).toContain("--region scopes to a single region");
+  });
+
+  it("verify command has a help screen with file arguments and no scope flags", () => {
+    const output = run(["verify", "--help"]);
+    expect(output).toContain("verify");
+    expect(output).toContain(".tf");
+    expect(output).toContain(".bicep");
+    expect(output).toContain("--no-policy");
+    expect(output).toContain("--refresh");
+    expect(output).toContain("--output");
+    expect(output).toContain("--json");
+    // Regions come from the files — verify has no geography scope flags.
+    expect(output).not.toContain("--eu");
+  });
+
+  it("verify rejects value and name output modes before Azure calls", () => {
+    const value = runFail(["verify", "main.tf", "-o", "value"]);
+    expect(value.status).toBe(3);
+    expect(value.stderr).toContain("--output value is not supported for verify");
+
+    const name = runFail(["verify", "main.tf", "-o", "name"]);
+    expect(name.status).toBe(3);
+    expect(name.stderr).toContain("--output name is not supported for verify");
+  });
+
+  it("verify validates files before Azure calls", () => {
+    const missing = runFail(["verify", "does-not-exist.tf"]);
+    expect(missing.status).toBe(3);
+    expect(missing.stderr).toContain("Cannot read file");
+
+    const badExt = runFail(["verify", "README.md"]);
+    expect(badExt.status).toBe(3);
+    expect(badExt.stderr).toContain(".tf (Terraform) or .bicep");
+
+    const tfJson = runFail(["verify", "main.tf.json"]);
+    expect(tfJson.status).toBe(3);
+    expect(tfJson.stderr).toContain("JSON-syntax Terraform");
   });
 
   it("available command exists and has deployability filters", () => {

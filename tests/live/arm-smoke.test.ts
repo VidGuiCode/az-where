@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -303,5 +305,130 @@ describe.runIf(LIVE)("live doctor", () => {
     expect(payload.ok).toBe(payload.failed === 0);
     // The bearer token must never appear in doctor output.
     expect(res.stdout).not.toMatch(/accessToken/i);
+  });
+});
+
+describe.runIf(LIVE)("live verify", () => {
+  it("verify -o json returns the documented shape with checked pairs and skips", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "azw-verify-"));
+    try {
+      const tfFile = path.join(dir, "main.tf");
+      writeFileSync(
+        tfFile,
+        [
+          'resource "azurerm_linux_virtual_machine" "vm" {',
+          '  name     = "vm"',
+          '  location = "westeurope"',
+          '  size     = "Standard_B1s"',
+          "}",
+          "",
+          'resource "azurerm_windows_virtual_machine" "vm_win" {',
+          '  name     = "vm-win"',
+          "  location = var.location",
+          '  size     = "Standard_D2s_v5"',
+          "}",
+          "",
+        ].join("\n"),
+      );
+
+      const res = runJson(["verify", tfFile, "-o", "json"]);
+      // Exit 0 (everything deploys) or 1 (a checked pair is blocked) are both
+      // valid outcomes; anything else means auth/usage/install failure.
+      expect([0, 1]).toContain(res.status);
+
+      const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+      expect(payload.schemaVersion).toBe(1);
+      expect(payload.kind).toBe("verify");
+      expect(payload.resourceKind).toBe("vm");
+      expect(payload.confidence).toBe("deployability");
+      expect(payload.files).toEqual([tfFile]);
+      expect(payload.formats).toEqual(["terraform"]);
+
+      const results = payload.results as Array<Record<string, unknown>>;
+      expect(results).toHaveLength(1);
+      const row = results[0]!;
+      expect(row.resourceName).toBe("vm");
+      expect(row.sku).toBe("Standard_B1s");
+      expect(row.region).toBe("westeurope");
+      expect(VM_VERDICTS.has(row.checks?.verdict as string)).toBe(true);
+      expect(row.explanation?.code).toBe((row.checks as Record<string, unknown>).verdict);
+
+      const summary = payload.summary as Record<string, number>;
+      expect(summary.resources).toBe(2);
+      expect(summary.checked).toBe(1);
+      expect(summary.skipped).toBe(1);
+
+      const skipped = payload.skipped as Array<Record<string, unknown>>;
+      expect(skipped[0]?.resourceName).toBe("vm_win");
+      expect(skipped[0]?.reason).toBe("dynamic-location");
+
+      // Exit code matches the blocked-pair rule, not the skip.
+      expect(res.status).toBe(summary.deployableCount === 0 ? 1 : 0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("verify parses Bicep files against live ARM", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "azw-verify-"));
+    try {
+      const bicepFile = path.join(dir, "main.bicep");
+      writeFileSync(
+        bicepFile,
+        [
+          "resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {",
+          "  name: 'vm'",
+          "  location: 'westeurope'",
+          "  properties: {",
+          "    hardwareProfile: {",
+          "      vmSize: 'Standard_B1s'",
+          "    }",
+          "  }",
+          "}",
+          "",
+        ].join("\n"),
+      );
+
+      const res = runJson(["verify", bicepFile, "-o", "json"]);
+      expect([0, 1]).toContain(res.status);
+      const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+      expect(payload.formats).toEqual(["bicep"]);
+      const results = payload.results as Array<Record<string, unknown>>;
+      expect(results).toHaveLength(1);
+      expect(VM_VERDICTS.has(results[0]!.checks?.verdict as string)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("verify human table prints verdicts, reasons, and the skip summary", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "azw-verify-"));
+    try {
+      const tfFile = path.join(dir, "main.tf");
+      writeFileSync(
+        tfFile,
+        [
+          'resource "azurerm_linux_virtual_machine" "vm" {',
+          '  name     = "vm"',
+          '  location = "westeurope"',
+          '  size     = "Standard_B1s"',
+          "}",
+          "",
+        ].join("\n"),
+      );
+
+      const res = runJson(["verify", tfFile]);
+      expect([0, 1]).toContain(res.status);
+      expect(res.stdout).toContain("RESOURCE");
+      expect(res.stdout).toContain("VERDICT");
+      // Blocked or not, the footer always states what was verified.
+      expect(res.stdout).toMatch(/Verified 1 of 1 VM resources/);
+      // The Reason line appears only when the checked pair is blocked.
+      if (res.status === 1) {
+        expect(res.stdout).toContain("Reason: ");
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

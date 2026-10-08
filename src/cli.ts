@@ -9,6 +9,7 @@ import { createGeosCommand } from "./commands/geos.js";
 import { createSkusCommand } from "./commands/skus.js";
 import { createResourcesCommand } from "./commands/resources.js";
 import { createSuggestCommand } from "./commands/suggest.js";
+import { createVerifyCommand } from "./commands/verify.js";
 import { createAvailableCommand } from "./commands/available.js";
 import { createAvailabilityCommand } from "./commands/availability.js";
 import { createCheckCommand } from "./commands/check.js";
@@ -44,6 +45,7 @@ function splash(version: string): string {
                               One-region VM deployability verdict
     azw compare vm B1s,B2s,D2s_v5 --eu
                               Region × size deployability matrix
+    azw verify main.tf       Preflight IaC: check VM size+region pairs before apply
     azw pick vm B1s --eu      One region name (for terraform / scripts)
     azw check resource storage-account --region westeurope
                               Generic resource availability check
@@ -108,6 +110,7 @@ program.addCommand(createCheckCommand());
 program.addCommand(createCompareCommand());
 program.addCommand(createPickCommand());
 program.addCommand(createSuggestCommand());
+program.addCommand(createVerifyCommand());
 program.addCommand(createRegionsCommand());
 program.addCommand(createQuotaCommand());
 program.addCommand(createGeosCommand());

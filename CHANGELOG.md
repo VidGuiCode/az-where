@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.7
+
+### IaC Preflight
+
+- Add `azw verify <files...>` to preflight Terraform (`.tf`) and Bicep (`.bicep`) files before `terraform apply` or a Bicep deployment: it parses every statically-known VM `location + size` pair and runs it through the same deployability checks as `azw check vm` (policy, SKU offers, subscription restrictions, live vCPU quota).
+- Only literal values are checked. Dynamic expressions — `var.location`, `"${var.size}"` interpolation, `resourceGroup().location`, param references — are reported as skipped findings with the raw expression echoed and the `file:line`, never guessed. This is a preflight, not a linter: no syntax validation, no module/source following, no variable evaluation.
+- VM coverage in this release: Terraform `azurerm_linux_virtual_machine`, `azurerm_windows_virtual_machine`, legacy `azurerm_virtual_machine` (`vm_size`), and the linux/windows/orchestrated `*_virtual_machine_scale_set` types; Bicep `Microsoft.Compute/virtualMachines` and `virtualMachineScaleSets`. Scale-set capacity multiplies the vCPU requirement (`capacity: 3` on a 2-vCPU size needs 6 free vCPUs); dynamic capacity is checked as a single instance.
+- Location literals match ARM region names case-insensitively and display names like `West Europe`; unmatched literals become `unknown-region` skips.
+- One or more files are accepted (`azw verify main.tf vm.tf`, shell globs included); duplicate paths are checked once. Verifying N pairs costs O(regions): pairs are grouped by region and each region makes one cached SKU-catalog call plus one live usage call, mirroring `compare vm`.
+- Human output prints one row per resource in source order with the verdict glyphs, `Reason`/`Hint` lines for blocked pairs, a blocker summary, and a skipped-resources list pointing at each `file:line`.
+- Stable JSON contract (`kind: "verify"`): `files`, `formats`, a `summary` (`resources`, `checked`, `skipped`, `deployableCount`, `verdictCounts`), one `results[]` row per checked pair carrying source metadata plus the pinned 16-field verdict row and an `explanation`, and a `skipped[]` findings list (`dynamic-location`, `dynamic-sku`, `unknown-region`).
+- Exit codes: `1` only when a checked pair is blocked; skipped resources and runs where nothing was statically checkable exit `0` with a warning, so variable-driven files stay a warning rather than a CI gate. `--output value` and `--output name` are rejected as validation errors before any Azure call; file validation (missing file, wrong extension, `.tf.json`) also fails fast with exit `3`.
+- Verify is VM-only in this release; checking generic resource types inside IaC files is deferred until resource verdicts mature (see roadmap).
+
 ## 0.4.6
 
 ### Check Explanations

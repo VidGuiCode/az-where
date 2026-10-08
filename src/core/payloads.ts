@@ -11,10 +11,12 @@
 
 import type { CacheSummary } from "./cache.js";
 import { explainResourceVerdict, explainVmVerdict } from "./explain.js";
+import type { IacFormat, IacSkippedResource } from "./iac.js";
 import type { PolicySummary } from "./policy.js";
 import type { ResolvedResourceType } from "./resources.js";
 import type { Suggestion } from "./suggest.js";
 import type { RegionVerdict, ResourceAvailabilityVerdict } from "./types.js";
+import { countVerdicts, type VerifyResultRow } from "./verify.js";
 
 export interface CheckVmPayload {
   schemaVersion: 1;
@@ -267,5 +269,67 @@ export function buildSuggestPayload(input: {
           factors: input.suggestion.factors,
         }
       : null,
+  };
+}
+
+export interface VerifyPayload {
+  schemaVersion: 1;
+  kind: "verify";
+  resourceKind: "vm";
+  confidence: "deployability";
+  files: string[];
+  formats: IacFormat[];
+  scannedAt: string;
+  elapsedMs: number;
+  summary: {
+    /** VM + scale-set resources the parser saw across all files. */
+    resources: number;
+    /** Pairs that resolved statically and were checked. */
+    checked: number;
+    /** Resources reported in `skipped` (dynamic values, unknown regions). */
+    skipped: number;
+    deployableCount: number;
+    verdictCounts: Record<RegionVerdict["verdict"], number>;
+  };
+  /** One row per checked pair, in source order. Since 0.4.7. */
+  results: VerifyResultRow[];
+  /** VM resources found but not checkable; findings, not verdicts. */
+  skipped: IacSkippedResource[];
+  cache: CacheSummary;
+  policy: PolicySummary;
+}
+
+export function buildVerifyPayload(input: {
+  files: string[];
+  formats: IacFormat[];
+  scannedAt: string;
+  elapsedMs: number;
+  rows: VerifyResultRow[];
+  skipped: IacSkippedResource[];
+  vmResourceCount: number;
+  cache: CacheSummary;
+  policy: PolicySummary;
+}): VerifyPayload {
+  const verdictCounts = countVerdicts(input.rows);
+  return {
+    schemaVersion: 1,
+    kind: "verify",
+    resourceKind: "vm",
+    confidence: "deployability",
+    files: input.files,
+    formats: input.formats,
+    scannedAt: input.scannedAt,
+    elapsedMs: input.elapsedMs,
+    summary: {
+      resources: input.vmResourceCount,
+      checked: input.rows.length,
+      skipped: input.skipped.length,
+      deployableCount: verdictCounts.AVAILABLE,
+      verdictCounts,
+    },
+    results: input.rows,
+    skipped: input.skipped,
+    cache: input.cache,
+    policy: input.policy,
   };
 }

@@ -41,7 +41,7 @@ These are the exact verdict strings emitted by the implementation (older docs us
 | Field | Type | Present in | Notes |
 |---|---|---|---|
 | `schemaVersion` | `1` | all | |
-| `kind` | string | all | The verb: `availability`, `check`, `pick`, `suggest`, `compare` |
+| `kind` | string | all | The verb: `availability`, `check`, `pick`, `suggest`, `compare`, `verify` |
 | `resourceKind` | string | all | `vm` or `resource` |
 | `cache` | object | all | `{ used, refreshed, ttlSeconds }` |
 | `policy` | object | all | `{ checked, restricted, allowedLocations, assignments: [{name, displayName}], error }`; `allowedLocations`/`assignments` are `null`/`[]` when unrestricted |
@@ -195,6 +195,57 @@ Same envelope with `resourceKind: "resource"`, `resolved`, `confidence: "availab
 ### `azw compare vm <sku-list> [scope] -o json`
 
 Documented with 0.4.5: a shared `regions` string axis plus `results[]` — one per requested SKU in request order — carrying `family`, `vcpus`, `memoryGiB`, per-region cells, `deployableRegions`, `deployableCount`, and `verdictCounts`. See the 0.4.5 changelog entry for the full field list.
+
+### `azw verify <files...> -o json` (since 0.4.7)
+
+IaC preflight: one `results[]` row per statically-known `location + size` pair parsed from Terraform/Bicep files, plus a `skipped[]` list of VM resources that could not be checked.
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "verify",
+  "resourceKind": "vm",
+  "confidence": "deployability",
+  "files": ["main.tf"],
+  "formats": ["terraform"],
+  "scannedAt": "2026-10-08T12:00:00.000Z",
+  "elapsedMs": 4200,
+  "summary": { "resources": 2, "checked": 1, "skipped": 1, "deployableCount": 1, "verdictCounts": { "AVAILABLE": 1, "FULL": 0, "SKU_NOT_OFFERED": 0, "BLOCKED_FOR_SUB": 0, "POLICY_DENIED": 0, "QUOTA_UNKNOWN": 0 } },
+  "results": [
+    {
+      "file": "main.tf",
+      "line": 14,
+      "format": "terraform",
+      "resourceType": "azurerm_linux_virtual_machine",
+      "resourceName": "vm",
+      "sku": "Standard_B1s",
+      "region": "westeurope",
+      "capacity": 1,
+      "checks": { "region": "westeurope", "displayName": "West Europe", "...": "the full 16-field VM row, identical to azw check vm" },
+      "explanation": { "code": "AVAILABLE", "reason": "Standard_B1s is offered in westeurope ...", "hint": null }
+    }
+  ],
+  "skipped": [
+    {
+      "file": "main.tf",
+      "line": 32,
+      "format": "terraform",
+      "resourceType": "azurerm_windows_virtual_machine",
+      "resourceName": "vm_win",
+      "reason": "dynamic-location",
+      "detail": "azurerm_resource_group.rg.location"
+    }
+  ],
+  "cache": { "...": "..." },
+  "policy": { "...": "..." }
+}
+```
+
+- `results[]` rows embed the pinned 16-field VM verdict row as `checks` plus a per-row `explanation`, exactly like `azw check vm`; `region` is the ARM name the file's location literal resolved to (display-name literals like `West Europe` resolve too).
+- `capacity` is a literal scale-set instance count (quota checks multiply the vCPU need by it); `1` for single VMs, `null` when the capacity expression is dynamic (treated as a single instance).
+- `skipped[].reason` is a finding, not a verdict: `dynamic-location`, `dynamic-sku`, or `unknown-region` (the literal matched no ARM region). `detail` echoes the raw expression or literal.
+- Exit `1` only when a checked pair is blocked; skipped resources never fail the run. Zero checkable pairs exits `0` — the payload states `checked: 0`.
+- `--output value` and `--output name` are rejected as validation errors before any Azure call.
 
 ## Error Envelope
 

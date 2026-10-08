@@ -46,6 +46,7 @@ The canonical grammar should be used for new docs and new resource kinds, while 
 | `availability.ts` | `azw availability vm <sku>` / `azw availability resource <target>` - canonical availability scans |
 | `check.ts` | `azw check vm <sku>` / `azw check resource <target>` - one-region verdicts with a reason |
 | `compare.ts` | `azw compare vm <sku-list>` - region × size deployability matrix |
+| `verify.ts` | `azw verify <files...>` - IaC preflight for statically-known VM location+size pairs |
 | `regions.ts` | `azw regions <sku>` - full availability table |
 | `pick.ts` | `azw pick <sku>` - one region name for scripts |
 | `suggest.ts` | `azw suggest <sku>` - recommended region with a short reason |
@@ -80,6 +81,10 @@ Command handlers stay thin: parse flags, call core helpers, print output.
 `src/core/available.ts` powers `azw available`. It scans each candidate region once, reads matching family SKUs from the location-filtered Compute SKU endpoint, checks live quota per region, then groups deployable results by SKU.
 
 `src/core/pricing.ts` reads the public Azure Retail Prices API for optional compute-only estimates. Pricing never changes deployability verdicts; it only enriches `price` and `available --price` output.
+
+`src/core/iac.ts` parses Terraform (`.tf`) and Bicep (`.bicep`) files into statically-known `location + size` pairs (VMs and scale sets). It is a lightweight scanner, not a language toolchain: only literal values resolve, comments/heredocs/multi-line strings are blanked, and dynamic expressions are reported as skipped findings with the raw text echoed.
+
+`src/core/verify.ts` runs those pairs through the same verdict chain as `check vm`, grouped by region (one cached catalog call plus one live usage call per region, mirroring `compare`). Scale-set `capacity` multiplies the vCPU requirement.
 
 Quota/usage is intentionally never cached.
 

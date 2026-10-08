@@ -4,7 +4,7 @@
 
 **What and where can my Azure subscription deploy?**
 
-[![Release](https://img.shields.io/badge/release-v0.4.5-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
+[![Release](https://img.shields.io/badge/release-v0.4.7-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
 [![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6?logo=typescript&logoColor=white)](tsconfig.json)
@@ -32,7 +32,7 @@ az login
 Install the current release:
 
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.4.5/az-where-0.4.5.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.4.7/az-where-0.4.7.tgz
 ```
 
 Or build from source:
@@ -62,6 +62,7 @@ Two binaries are installed: `azw` and `az-where`. They are the same tool.
 | Check only Europe / US / Asia Pacific | `azw availability vm B1s --eu` / `--us` / `--asia` |
 | Check one VM size in one region | `azw check vm B1s --region westeurope` |
 | Compare several VM sizes at once | `azw compare vm B1s,B2s,D2s_v5 --eu` |
+| Preflight Terraform/Bicep before apply | `azw verify main.tf vm.tf` |
 | Print one deployable region | `azw pick vm B1s` |
 | Get a recommended region with a reason | `azw suggest vm B1s --eu --near Luxembourg` |
 | Check generic resource availability | `azw availability resource storage-account --eu` |
@@ -101,6 +102,23 @@ Reason: Standard_B1s needs 2 vCPUs but family standardBSFamily has only 0/4 free
   Hint: Request a quota increase (Azure Portal → Quotas) or free up vCPUs, then re-check.
 ```
 
+`verify` runs those same checks over your infrastructure code before you deploy it:
+
+```text
+RESOURCE   SKU    REGION       VERDICT          QUOTA
+--------   ----   ----------   --------------   ---------
+vm         B1s    westeurope   ✓ DEPLOY         6/10 free
+vm_win     D2s_v5 westeurope   ✗ QUOTA FULL     0/10 free
+
+Reason: vm_win @ main.tf:32 — Standard_D2s_v5 needs 4 vCPUs but family standardDDSv5Family has only 0/10 free in westeurope — 4 vCPUs short.
+  Hint: Request a quota increase (Azure Portal → Quotas) or free up vCPUs, then re-check.
+1 of 2 checked VM resources cannot deploy as written.
+Skipped 1 resource — not statically checkable:
+  vmss @ main.tf:48 — var.location (dynamic-location)
+```
+
+Only statically-literal `location`/`size` pairs are checked; resources driven by variables are listed as skipped with the expression echoed, never guessed.
+
 During scans, stderr shows progress immediately, including the initial Azure token/region lookup, then switches to the per-region progress bar when the region count is known.
 
 ## Commands
@@ -116,6 +134,8 @@ azw check resource <alias-or-type> --region <name>
                          # one-region generic resource availability verdict
 azw compare vm <sku-list>
                          # region × size deployability matrix (e.g. B1s,B2s,D2s_v5)
+azw verify <files...>    # preflight .tf/.bicep files: check VM size+region
+                         # pairs before terraform apply / az deployment
 azw pick vm <sku>        # one deployable region name for scripts
 azw suggest vm <sku>     # recommended region with a short explanation
 azw regions <sku>        # compatibility shortcut for VM availability
@@ -201,11 +221,14 @@ azw availability vm B1s --eu -o compact
 azw check vm B1s --region westeurope -o json
 azw availability resource storage-account --eu -o json
 azw compare vm B1s,B2s,D2s_v5 --eu -o json
+azw verify main.tf -o json
 ```
+
+`verify` exits `1` when a checked pair is blocked, so it can gate a CI step before `terraform apply`; resources with dynamic values are reported as skipped and never fail the run.`
 
 `compare vm` emits a stable matrix contract for choosing fallback sizes: a top-level `regions` axis plus one result per requested SKU with `deployableRegions`, `deployableCount`, and `verdictCounts`, so scripts can walk the SKU order and pick the first that deploys in a target region.
 
-Field-level JSON shapes for `availability`, `check`, `pick`, `suggest`, and `compare` are documented as stable contracts in [docs/json-contracts.md](docs/json-contracts.md), pinned by tests. `check` payloads carry an `explanation` object (`code`, `reason`, `hint`) so agents get the same evidence-based blocker details humans see:
+Field-level JSON shapes for `availability`, `check`, `pick`, `suggest`, `compare`, and `verify` are documented as stable contracts in [docs/json-contracts.md](docs/json-contracts.md), pinned by tests. `check` payloads carry an `explanation` object (`code`, `reason`, `hint`) so agents get the same evidence-based blocker details humans see:
 
 ```json
 {
