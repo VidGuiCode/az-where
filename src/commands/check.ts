@@ -1,8 +1,18 @@
 import { Command } from "commander";
 import { armCacheSummary } from "../core/cache.js";
 import { exitWithError, ValidationError } from "../core/errors.js";
+import { explainResourceVerdict, explainVmVerdict } from "../core/explain.js";
 import { listLocations } from "../core/geo.js";
-import { printJson, printVerdictTable, printTable } from "../core/output.js";
+import {
+  printJson,
+  printTable,
+  printVerdictTable,
+  renderCheckExplanation,
+} from "../core/output.js";
+import {
+  buildCheckResourcePayload,
+  buildCheckVmPayload,
+} from "../core/payloads.js";
 import {
   addJsonCompatibilityOptions,
   addOutputOption,
@@ -91,23 +101,15 @@ async function runVmCheckAction(
       return;
     }
     if (isJsonOutput(mode)) {
-      printJson({
-        schemaVersion: 1,
-        kind: "check",
-        resourceKind: "vm",
-        target: sku,
-        region: row.region,
-        verdict: row.verdict,
-        confidence: "deployability",
-        cache: armCacheSummary(),
-        policy: policy.summary,
-        checks: row,
-      });
+      printJson(buildCheckVmPayload(sku, row, armCacheSummary(), policy.summary));
       if (!ok) process.exit(1);
       return;
     }
 
     printVerdictTable([row]);
+    for (const line of renderCheckExplanation(explainVmVerdict(sku, row))) {
+      console.log(line);
+    }
     if (!ok) process.exit(1);
   } catch (err) {
     exitWithError(err, jsonErrors);
@@ -163,24 +165,17 @@ async function runResourceCheckAction(
       return;
     }
     if (isJsonOutput(mode)) {
-      printJson({
-        schemaVersion: 1,
-        kind: "check",
-        resourceKind: "resource",
-        target,
-        resolved,
-        region: row.region,
-        verdict: row.verdict,
-        confidence: "availability",
-        cache: armCacheSummary(),
-        policy: policy.summary,
-        checks: row,
-      });
+      printJson(
+        buildCheckResourcePayload(target, resolved, row, armCacheSummary(), policy.summary),
+      );
       if (!ok) process.exit(1);
       return;
     }
 
     printTable(resourceCheckRows([row]), ["REGION", "RESOURCE", "VERDICT", "CONFIDENCE"]);
+    for (const line of renderCheckExplanation(explainResourceVerdict(row))) {
+      console.log(line);
+    }
     if (!ok) process.exit(1);
   } catch (err) {
     exitWithError(err, jsonErrors);

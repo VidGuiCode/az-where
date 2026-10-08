@@ -90,6 +90,17 @@ Ready to deploy Standard_B1s (1): westeurope
 Scanned 17 regions in 5.8s.
 ```
 
+`check` commands explain the verdict right under the table:
+
+```text
+REGION     GEO    LOCATION    OFFERED   QUOTA       VERDICT
+--------   ----   ---------   -------   ---------   -------------
+westeurope EU     Amsterdam   yes       0/4 free    QUOTA FULL
+
+Reason: Standard_B1s needs 2 vCPUs but family standardBSFamily has only 0/4 free in westeurope — 2 vCPUs short.
+  Hint: Request a quota increase (Azure Portal → Quotas) or free up vCPUs, then re-check.
+```
+
 During scans, stderr shows progress immediately, including the initial Azure token/region lookup, then switches to the per-region progress bar when the region count is known.
 
 ## Commands
@@ -193,6 +204,19 @@ azw compare vm B1s,B2s,D2s_v5 --eu -o json
 ```
 
 `compare vm` emits a stable matrix contract for choosing fallback sizes: a top-level `regions` axis plus one result per requested SKU with `deployableRegions`, `deployableCount`, and `verdictCounts`, so scripts can walk the SKU order and pick the first that deploys in a target region.
+
+Field-level JSON shapes for `availability`, `check`, `pick`, `suggest`, and `compare` are documented as stable contracts in [docs/json-contracts.md](docs/json-contracts.md), pinned by tests. `check` payloads carry an `explanation` object (`code`, `reason`, `hint`) so agents get the same evidence-based blocker details humans see:
+
+```json
+{
+  "verdict": "FULL",
+  "explanation": {
+    "code": "FULL",
+    "reason": "Standard_B1s needs 2 vCPUs but family standardBSFamily has only 0/4 free in westeurope — 2 vCPUs short.",
+    "hint": "Request a quota increase (Azure Portal → Quotas) or free up vCPUs, then re-check."
+  }
+}
+```
 
 `value` and `name` are intentionally narrower than JSON: they are only enabled on commands where the output has a stable single-value or one-name-per-line meaning. Unsupported combinations fail as validation errors before any Azure calls.
 

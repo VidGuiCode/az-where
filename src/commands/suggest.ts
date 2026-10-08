@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { armCacheSummary } from "../core/cache.js";
 import { exitWithError, ValidationError } from "../core/errors.js";
+import { explainVmVerdict } from "../core/explain.js";
 import { filterByGeography, listLocations, resolveGeography } from "../core/geo.js";
 import { printInfo, printJson } from "../core/output.js";
 import {
@@ -9,6 +10,7 @@ import {
   isJsonOutput,
   resolveOutputMode,
 } from "../core/outputMode.js";
+import { buildSuggestPayload } from "../core/payloads.js";
 import { scanRegions, sortVerdicts } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
 import { chooseSuggestion, knownPlaces, resolvePlace } from "../core/suggest.js";
@@ -101,43 +103,39 @@ export async function runSuggestAction(
 
     if (!suggestion) {
       if (isJsonOutput(mode)) {
-        printJson({
-          schemaVersion: 1,
-          kind: "suggest",
-          resourceKind: "vm",
+        printJson(
+          buildSuggestPayload({
+            sku,
+            geography: geo ?? "all",
+            near: nearInput || null,
+            elapsedMs,
+            cache: armCacheSummary(),
+            policy: policy.summary,
+            suggestion: null,
+          }),
+        );
+        process.exit(1);
+      }
+      process.stderr.write(`No region can deploy ${sku} right now.\n`);
+      const closest = rows[0];
+      if (closest) {
+        process.stderr.write(`Why: ${explainVmVerdict(sku, closest).reason}\n`);
+      }
+      process.exit(1);
+    }
+
+    if (isJsonOutput(mode)) {
+      printJson(
+        buildSuggestPayload({
           sku,
           geography: geo ?? "all",
           near: nearInput || null,
           elapsedMs,
           cache: armCacheSummary(),
           policy: policy.summary,
-          suggested: null,
-        });
-        process.exit(1);
-      }
-      process.stderr.write(`No region can deploy ${sku} right now.\n`);
-      process.exit(1);
-    }
-
-    if (isJsonOutput(mode)) {
-      printJson({
-        schemaVersion: 1,
-        kind: "suggest",
-        resourceKind: "vm",
-        sku,
-        geography: geo ?? "all",
-        near: nearInput || null,
-        elapsedMs,
-        cache: armCacheSummary(),
-        policy: policy.summary,
-        suggested: {
-          region: suggestion.row.region,
-          displayName: suggestion.row.displayName,
-          reason: suggestion.reason,
-          score: suggestion.score,
-          factors: suggestion.factors,
-        },
-      });
+          suggestion,
+        }),
+      );
       return;
     }
 

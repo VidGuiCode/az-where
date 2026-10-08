@@ -44,7 +44,8 @@ The canonical grammar should be used for new docs and new resource kinds, while 
 |---|---|
 | `where.ts` | `azw where` - current Azure subscription and user |
 | `availability.ts` | `azw availability vm <sku>` / `azw availability resource <target>` - canonical availability scans |
-| `check.ts` | `azw check vm <sku>` / `azw check resource <target>` - one-region verdicts |
+| `check.ts` | `azw check vm <sku>` / `azw check resource <target>` - one-region verdicts with a reason |
+| `compare.ts` | `azw compare vm <sku-list>` - region × size deployability matrix |
 | `regions.ts` | `azw regions <sku>` - full availability table |
 | `pick.ts` | `azw pick <sku>` - one region name for scripts |
 | `suggest.ts` | `azw suggest <sku>` - recommended region with a short reason |
@@ -53,6 +54,8 @@ The canonical grammar should be used for new docs and new resource kinds, while 
 | `quota.ts` | `azw quota <sku>` - quota-focused view sorted by free vCPUs |
 | `geos.ts` | `azw geos` - geography groups visible to the subscription |
 | `skus.ts` | `azw skus` - VM SKU discovery |
+| `resources.ts` | `azw resources` - resource-type catalog discovery |
+| `doctor.ts` | `azw doctor` - local prerequisite checklist |
 | `update.ts` | `azw update` - latest-release check and confirmed install flow |
 
 Command handlers stay thin: parse flags, call core helpers, print output.
@@ -92,6 +95,12 @@ Quota/usage is intentionally never cached.
 | `SKU_NOT_OFFERED` | Azure does not offer the SKU in that region |
 
 `sortVerdicts()` orders deployable rows first. Human tables hide `SKU_NOT_OFFERED` rows by default; JSON keeps every row.
+
+## Explanations
+
+`src/core/explain.ts` turns a verdict row into a factual reason plus an optional actionable hint (`{ code, reason, hint }`). `check` commands print the reason and hint under the verdict table and carry them in JSON as `explanation`; availability footers and `pick`/`suggest` failure messages reuse the same module for blocker summaries. Explanations state observed evidence only, and generic resource explanations never claim deployability.
+
+`src/core/payloads.ts` builds every documented JSON payload so field names and order stay pinned in one place; the shapes are documented in [json-contracts.md](json-contracts.md).
 
 ## Cache
 
@@ -134,6 +143,7 @@ Progress uses stderr and switches between live redraw on TTY and log lines in CI
 | `1` | Generic failure, ARM failure, or no deployable region |
 | `2` | Azure login required |
 | `3` | Validation error |
+| `4` | `azw doctor` found a missing prerequisite |
 | `127` | Azure CLI missing |
 
 ARM HTTP errors include status code, endpoint, ARM error code, and ARM message when available. JSON error output exposes those details.

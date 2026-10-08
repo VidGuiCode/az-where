@@ -29,6 +29,7 @@ export function colorEnabled(): boolean {
 
 /** Length of a string ignoring ANSI escape sequences. Needed for table padding. */
 export function visibleLength(s: string): number {
+  // eslint-disable-next-line no-control-regex -- matching the ESC control char is the point
   return s.replace(/\x1b\[[0-9;]*m/g, "").length;
 }
 

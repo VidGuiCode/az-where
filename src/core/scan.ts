@@ -1,4 +1,5 @@
 import { armList, getToken } from "./arm.js";
+import { ArmHttpError } from "./errors.js";
 import type { PolicyCheck } from "./policy.js";
 import { Progress } from "./progress.js";
 import { isSkuBlockedForSubscription, skuVcpus } from "./sku.js";
@@ -109,16 +110,11 @@ async function scanOne(
 
   const vmSku = skus.find((s) => s.resourceType === "virtualMachines" && s.name === sku);
   if (!vmSku) {
-    return { ...base, skuOffered: false, verdict: "SKU_NOT_OFFERED" };
+    return buildNotOfferedVerdict(base, skus, sku);
   }
 
   if (isSkuBlockedForSubscription(vmSku)) {
-    return {
-      ...base,
-      skuOffered: false,
-      family: vmSku.family ?? null,
-      verdict: "BLOCKED_FOR_SUB",
-    };
+    return buildBlockedForSubVerdict(base, vmSku);
   }
 
   const usages = await armList<AzVmUsage>(
@@ -127,25 +123,16 @@ async function scanOne(
   ).catch(() => [] as AzVmUsage[]);
 
   const family = vmSku.family ?? null;
+  const requiredVcpus = skuVcpus(vmSku) ?? 1;
   const usage = family ? usages.find((u) => u.name?.value === family) : undefined;
   if (!usage) {
-    return { ...base, skuOffered: true, family, verdict: "QUOTA_UNKNOWN" };
+    return buildQuotaUnknownVerdict(base, family, requiredVcpus);
   }
 
-  const free = usage.limit - usage.currentValue;
-  const requiredVcpus = skuVcpus(vmSku) ?? 1;
-  return {
-    ...base,
-    skuOffered: true,
-    family,
-    used: usage.currentValue,
-    limit: usage.limit,
-    free,
-    verdict: free >= requiredVcpus ? "AVAILABLE" : "FULL",
-  };
+  return buildQuotaVerdict(base, family, requiredVcpus, usage);
 }
 
-function baseVerdict(location: AzLocation): RegionVerdict {
+export function baseVerdict(location: AzLocation): RegionVerdict {
   return {
     region: location.name,
     displayName: location.displayName,
@@ -159,15 +146,129 @@ function baseVerdict(location: AzLocation): RegionVerdict {
     policyAllowed: null,
     policyReason: null,
     verdict: "SKU_NOT_OFFERED",
+    requiredVcpus: null,
+    skuRestrictions: null,
+    familySizesOffered: null,
+    errorDetail: null,
   };
 }
 
-function errorVerdict(location: AzLocation, _err: unknown): RegionVerdict {
+/** SKU absent from the region catalog: keep same-series evidence for explanations. */
+export function buildNotOfferedVerdict(
+  base: RegionVerdict,
+  skus: AzVmSku[],
+  sku: string,
+): RegionVerdict {
   return {
-    ...baseVerdict(location),
-    verdict: "QUOTA_UNKNOWN",
+    ...base,
     skuOffered: false,
+    verdict: "SKU_NOT_OFFERED",
+    familySizesOffered: sameSeriesSizes(skus, sku),
   };
+}
+
+/** SKU is listed but Azure restricts it for this subscription: keep the raw restrictions. */
+export function buildBlockedForSubVerdict(base: RegionVerdict, vmSku: AzVmSku): RegionVerdict {
+  return {
+    ...base,
+    skuOffered: false,
+    family: vmSku.family ?? null,
+    verdict: "BLOCKED_FOR_SUB",
+    skuRestrictions: vmSku.restrictions ?? null,
+  };
+}
+
+/** SKU is offered but the usage report has no row for its family. */
+export function buildQuotaUnknownVerdict(
+  base: RegionVerdict,
+  family: string | null,
+  requiredVcpus: number,
+): RegionVerdict {
+  return {
+    ...base,
+    skuOffered: true,
+    family,
+    requiredVcpus,
+    verdict: "QUOTA_UNKNOWN",
+  };
+}
+
+/** Quota row found: verdict from free headroom vs. what one instance needs. */
+export function buildQuotaVerdict(
+  base: RegionVerdict,
+  family: string | null,
+  requiredVcpus: number,
+  usage: AzVmUsage,
+): RegionVerdict {
+  const free = usage.limit - usage.currentValue;
+  return {
+    ...base,
+    skuOffered: true,
+    family,
+    requiredVcpus,
+    used: usage.currentValue,
+    limit: usage.limit,
+    free,
+    verdict: free >= requiredVcpus ? "AVAILABLE" : "FULL",
+  };
+}
+
+/** An ARM call failed mid-scan: keep a concise, secret-free failure summary. */
+export function buildErrorVerdict(base: RegionVerdict, err: unknown): RegionVerdict {
+  return {
+    ...base,
+    skuOffered: false,
+    verdict: "QUOTA_UNKNOWN",
+    errorDetail: summarizeArmFailure(err),
+  };
+}
+
+/** Same-series sizes listed in the region, capped, e.g. Standard_B1s → [B2s, B4ms…]. */
+function sameSeriesSizes(skus: AzVmSku[], sku: string): string[] {
+  const series = skuSeriesPrefix(sku);
+  if (!series) return [];
+  return skus
+    .filter(
+      (s) =>
+        s.resourceType === "virtualMachines" && isSameSeriesSize(s.name, series) && s.name !== sku,
+    )
+    .map((s) => s.name)
+    .sort()
+    .slice(0, 5);
+}
+
+/** `Standard_B1s` → `Standard_B`; null when the name doesn't match the size shape. */
+function skuSeriesPrefix(sku: string): string | null {
+  const rest = sku.replace(/^Standard_/i, "");
+  const match = /^([A-Za-z]+)(?=\d)/.test(rest) ? rest.match(/^([A-Za-z]+)(?=\d)/) : null;
+  return match ? `Standard_${match[1]}` : null;
+}
+
+/** The series letters must be followed by a size digit: Standard_B2s yes, Standard_BS_Family no. */
+function isSameSeriesSize(name: string, seriesPrefix: string): boolean {
+  const lower = name.toLowerCase();
+  if (!lower.startsWith(seriesPrefix.toLowerCase())) return false;
+  const next = lower.charAt(seriesPrefix.length);
+  return next >= "0" && next <= "9";
+}
+
+/** Concise failure summary for JSON/human output; never carries the bearer token. */
+function summarizeArmFailure(err: unknown): string | null {
+  if (err instanceof ArmHttpError) {
+    const parts = [`ARM ${err.statusCode} ${err.statusText}`.trim()];
+    if (err.armCode) parts.push(err.armCode);
+    parts.push(err.endpoint);
+    return parts.join(" · ");
+  }
+  if (err instanceof Error) {
+    const message = err.message.split("\n")[0];
+    return message.length > 200 ? `${message.slice(0, 197)}...` : message;
+  }
+  return err ? String(err).slice(0, 200) : null;
+}
+
+function errorVerdict(location: AzLocation, err: unknown): RegionVerdict {
+  return buildErrorVerdict(baseVerdict(location), err);
 }
 
 /** Sort: deployable first, then unknown/partial, then hard-no. Within each, by geo then region. */

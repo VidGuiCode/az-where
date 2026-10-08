@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.6
+
+### Check Explanations
+
+- `azw check vm` and `azw check resource` now print a factual `Reason` line (plus an actionable `Hint` when one exists) under the verdict table, built from evidence observed during the check — quota shortfalls, ARM restriction reason codes, policy reasons, same-series sizes offered, or the ARM failure that made quota unknown.
+- Verdict rows carry the evidence the reasons are built from: `requiredVcpus`, `skuRestrictions`, `familySizesOffered`, and `errorDetail` on VM rows, and `providerRegistered`, `typeLocationCount`, and `notSupportedCause` (`provider-not-found` / `type-not-found` / `region-not-advertised`) on resource rows — all additive, `null` when unused.
+- `QUOTA_UNKNOWN` now distinguishes a missing usage row from a failed ARM call; the failed call's concise, secret-free summary is kept instead of being discarded.
+- Availability footers summarize blockers (`Blocked: 2 policy-denied, 1 quota-full…`) when nothing deploys, and `pick` / `suggest` failure messages add a `Why:` sentence from the closest-miss region.
+- Explanations stay factual: generic resource explanations always state that the verdict is availability, not deployability, and never claim a region can host a deployment.
+- Shared wording lives in one module (`src/core/explain.ts`), so check output, footers, failure messages, and JSON never drift apart.
+
+### Stable JSON Contracts
+
+- Document the stable JSON shapes for `availability vm`, `availability resource`, `check vm`, `check resource`, `pick vm`, and `suggest vm` in [docs/json-contracts.md](docs/json-contracts.md): envelope fields, row fields, verdict vocabulary, confidence semantics, exit codes, and the additive-only evolution rule at `schemaVersion: 1`.
+- `check vm` / `check resource` JSON carries a top-level `explanation` object (`code`, `reason`, `hint`) mirroring the human output for agents and scripts.
+- All six payloads are now built by shared payload builders (`src/core/payloads.ts`) and pinned by contract tests asserting every top-level field name and order; live variants run under `AZW_LIVE=1`.
+- Correct the command-standard verdict vocabulary to the implemented codes: the quota-exhausted verdict is `FULL` (older notes called it `QUOTA_FULL`), and `LOCATION_SUPPORTED` / `SKU_SUPPORTED` / `UNKNOWN_SERVICE_RULES` are marked reserved, not emitted.
+- No existing JSON field was renamed or removed; every change is additive.
+
 ## 0.4.5
 
 ### VM Comparison

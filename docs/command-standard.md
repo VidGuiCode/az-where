@@ -267,6 +267,7 @@ Rules:
 - `name` should emit one resource or region name per line.
 - `json`, `compact`, `value`, and `name` should avoid extra stderr notes unless stderr is carrying a fatal error.
 - Human tables can change cosmetically; JSON field names should not change casually.
+- Field-level JSON shapes for the contract-documented commands live in [json-contracts.md](json-contracts.md).
 - `--output` / `-o` should be preferred in new docs and examples.
 - Existing `--json`, `--compact`, and `--name` flags should remain as compatibility aliases.
 
@@ -276,32 +277,33 @@ VM checks can produce strong deployability verdicts because `azw` can combine SK
 
 Generic resource checks should use availability/confidence verdicts instead of pretending full deployability is known.
 
-Recommended shared verdict vocabulary:
+Implemented verdict vocabulary (the exact strings commands emit — see [json-contracts.md](json-contracts.md) for the full contract):
 
-| Verdict | Meaning |
-|---|---|
-| `AVAILABLE` | All required checks for this kind passed |
-| `LOCATION_SUPPORTED` | Azure location is visible to the subscription |
-| `RESOURCE_SUPPORTED` | Resource type is advertised for the region |
-| `RESOURCE_NOT_SUPPORTED` | Resource type is not advertised for the region |
-| `SKU_SUPPORTED` | SKU/tier appears supported for the region |
-| `POLICY_DENIED` | Azure Policy blocks the region |
-| `BLOCKED_FOR_SUB` | Azure reports the subscription is blocked |
-| `QUOTA_FULL` | Known quota is insufficient |
-| `QUOTA_UNKNOWN` | Quota could not be matched or read |
-| `SKU_NOT_OFFERED` | SKU is not offered in that region |
-| `UNKNOWN_SERVICE_RULES` | Azure does not expose enough data for a stronger verdict |
+| Verdict | Kind | Meaning |
+|---|---|---|
+| `AVAILABLE` | VM | Offered, unrestricted, policy-allowed, and quota fits |
+| `FULL` | VM | Quota for the size's family is insufficient (concept name in older notes: `QUOTA_FULL`) |
+| `SKU_NOT_OFFERED` | VM | Size is not listed in the region's SKU catalog |
+| `BLOCKED_FOR_SUB` | VM | Azure restricts the size for this subscription |
+| `POLICY_DENIED` | VM, resource | Azure Policy allowed-location assignment excludes the region |
+| `QUOTA_UNKNOWN` | VM | Quota state could not be read |
+| `RESOURCE_SUPPORTED` | resource | Provider catalog advertises the region for the type |
+| `RESOURCE_NOT_SUPPORTED` | resource | Provider catalog does not advertise the region for the type |
 
-Every JSON result should include:
+`LOCATION_SUPPORTED`, `SKU_SUPPORTED`, and `UNKNOWN_SERVICE_RULES` are reserved vocabulary for future kinds; no command emits them today.
+
+Every check JSON result includes (single-region `check` commands carry one row object in `checks`; scans carry `regions[]`):
 
 ```json
 {
-  "kind": "vm",
+  "kind": "check",
+  "resourceKind": "vm",
   "target": "Standard_B1s",
   "region": "westeurope",
   "verdict": "AVAILABLE",
   "confidence": "deployability",
-  "checks": []
+  "checks": { "region": "westeurope", "verdict": "AVAILABLE" },
+  "explanation": { "code": "AVAILABLE", "reason": "…", "hint": null }
 }
 ```
 
@@ -311,7 +313,7 @@ Confidence values:
 |---|---|
 | `deployability` | Strong enough to use for deployment script selection |
 | `availability` | Azure advertises support, but not all deployability checks are known |
-| `unknown` | The command can only report partial information |
+| `unknown` | Reserved; not emitted by any command today |
 
 ## Proposed Command List
 

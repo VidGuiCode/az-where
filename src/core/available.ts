@@ -18,7 +18,11 @@ export interface AvailableScanOptions {
   policy?: PolicyCheck;
 }
 
-export interface AvailableRegion extends Omit<RegionVerdict, "family"> {
+export interface AvailableRegion
+  extends Omit<
+    RegionVerdict,
+    "family" | "requiredVcpus" | "skuRestrictions" | "familySizesOffered" | "errorDetail"
+  > {
   used: number | null;
   limit: number | null;
   free: number | null;

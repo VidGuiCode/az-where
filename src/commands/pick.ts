@@ -1,7 +1,9 @@
 import { Command } from "commander";
 import { exitWithError, ValidationError } from "../core/errors.js";
+import { explainVmVerdict } from "../core/explain.js";
 import { printJson } from "../core/output.js";
 import { filterByGeography, listLocations, resolveGeography } from "../core/geo.js";
+import { buildPickPayload } from "../core/payloads.js";
 import { scanRegions, sortVerdicts } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
 import { armCacheSummary } from "../core/cache.js";
@@ -86,41 +88,24 @@ export async function runPickAction(
       policy: policy.check,
       stopWhen: (r) => r.verdict === "AVAILABLE",
     });
-    const ready = sortVerdicts(raw).find((r) => r.verdict === "AVAILABLE");
+    const sorted = sortVerdicts(raw);
+    const ready = sorted.find((r) => r.verdict === "AVAILABLE");
 
     if (!ready) {
       if (isJsonOutput(mode)) {
-        printJson({
-          schemaVersion: 1,
-          kind: "pick",
-          resourceKind: "vm",
-          sku,
-          cache: armCacheSummary(),
-          policy: policy.summary,
-          picked: null,
-        });
+        printJson(buildPickPayload(sku, armCacheSummary(), policy.summary, null));
         process.exit(1);
       }
       process.stderr.write(`No region can deploy ${sku} right now.\n`);
+      const closest = sorted[0];
+      if (closest) {
+        process.stderr.write(`Why: ${explainVmVerdict(sku, closest).reason}\n`);
+      }
       process.exit(1);
     }
 
     if (isJsonOutput(mode)) {
-      printJson({
-        schemaVersion: 1,
-        kind: "pick",
-        resourceKind: "vm",
-        sku,
-        cache: armCacheSummary(),
-        policy: policy.summary,
-        picked: {
-          region: ready.region,
-          displayName: ready.displayName,
-          geographyGroup: ready.geographyGroup ?? null,
-          free: ready.free,
-          limit: ready.limit,
-        },
-      });
+      printJson(buildPickPayload(sku, armCacheSummary(), policy.summary, ready));
       return;
     }
 

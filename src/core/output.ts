@@ -1,4 +1,6 @@
 import { ArmHttpError, AzCliError } from "./errors.js";
+import { summarizeBlockers } from "./explain.js";
+import type { VerdictExplanation } from "./explain.js";
 import { isCompactMode } from "./runtime.js";
 import { c, colorEnabled, padVisible, visibleLength } from "./color.js";
 import { shortGeo } from "./geo.js";
@@ -118,6 +120,17 @@ function offeredCell(offered: boolean): string {
   return offered ? c.green("✓") : c.red("✗");
 }
 
+/**
+ * Explanation lines printed under a check verdict table: the factual reason
+ * plus an optional actionable hint (doctor's detail/hint styling). Returns
+ * lines instead of printing so tests can pin the wording.
+ */
+export function renderCheckExplanation(explanation: VerdictExplanation): string[] {
+  const lines = [`Reason: ${explanation.reason}`];
+  if (explanation.hint) lines.push(`  Hint: ${explanation.hint}`);
+  return lines;
+}
+
 export function printVerdictTable(rows: RegionVerdict[]): void {
   const headers = ["REGION", "GEO", "LOCATION", "OFFERED", "QUOTA", "VERDICT"];
   const body = rows.map((r) => [
@@ -142,6 +155,8 @@ export function printFooter(rows: RegionVerdict[], elapsedMs: number, sku: strin
   } else {
     const msg = `No region can deploy ${sku} right now.`;
     console.log(colorEnabled() ? c.red(msg) : msg);
+    const blocked = summarizeBlockers(rows);
+    if (blocked) console.log(colorEnabled() ? c.dim(blocked) : blocked);
   }
   const footer = `Scanned ${rows.length} regions in ${seconds}s.`;
   console.log(colorEnabled() ? c.dim(footer) : footer);

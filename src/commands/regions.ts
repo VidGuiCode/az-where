@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { exitWithError, ValidationError } from "../core/errors.js";
 import { printFooter, printInfo, printJson, printVerdictTable } from "../core/output.js";
 import { filterByGeography, listLocations, resolveGeography } from "../core/geo.js";
+import { buildAvailabilityVmPayload } from "../core/payloads.js";
 import { scanRegions, sortVerdicts } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
 import { c, colorEnabled } from "../core/color.js";
@@ -59,7 +60,7 @@ export async function runRegionsAction(
     name?: boolean;
     output?: string;
   },
-  kind = "regions",
+  kind: "availability" | "regions" = "regions",
 ): Promise<void> {
   let jsonErrors = Boolean(opts.json);
   try {
@@ -120,19 +121,19 @@ export async function runRegionsAction(
     const deployable = rows.some((r) => r.verdict === "AVAILABLE");
 
     if (isJsonOutput(mode)) {
-      printJson({
-        schemaVersion: 1,
-        kind,
-        resourceKind: "vm",
-        sku,
-        geography: opts.region ? null : (geo ?? "all"),
-        region: opts.region ? locations[0].name : null,
-        scannedAt: new Date().toISOString(),
-        elapsedMs,
-        cache: armCacheSummary(),
-        policy: policy.summary,
-        regions: rows,
-      });
+      printJson(
+        buildAvailabilityVmPayload({
+          kind,
+          sku,
+          geography: opts.region ? null : (geo ?? "all"),
+          region: opts.region ? locations[0].name : null,
+          scannedAt: new Date().toISOString(),
+          elapsedMs,
+          cache: armCacheSummary(),
+          policy: policy.summary,
+          rows,
+        }),
+      );
       if (!deployable) process.exit(1);
       return;
     }

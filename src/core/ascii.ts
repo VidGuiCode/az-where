@@ -10,5 +10,9 @@ export function asciiSafe(s: string | undefined): string {
   return s
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\x00-\x7f]/g, "?");
+    .replace(
+      // eslint-disable-next-line no-control-regex -- folding control/non-ASCII chars is the point
+      /[^\x00-\x7f]/g,
+      "?",
+    );
 }

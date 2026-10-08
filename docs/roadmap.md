@@ -139,20 +139,15 @@ Planned improvements and features for upcoming releases. This is a living docume
 - Scope flags match `availability vm` (`--region`, `--eu`, `--us`, `--asia`, `--geography`, `--no-policy`, `--refresh`).
 - Compare stays VM-only in this release; resource comparison is deferred.
 
-## Planned
-
 ### 0.4.6 - Check Explanations And JSON Contracts
 
-- Add evidence-based blocker details for `azw check vm` and `azw check resource`.
-- Improve human explanations for `POLICY_DENIED`, `BLOCKED_FOR_SUB`, `QUOTA_FULL`, `SKU_NOT_OFFERED`, `QUOTA_UNKNOWN`, `RESOURCE_SUPPORTED`, and `RESOURCE_NOT_SUPPORTED`.
-- Document stable JSON shapes for:
-  - `availability vm`
-  - `availability resource`
-  - `check vm`
-  - `check resource`
-  - `pick vm`
-  - `suggest vm`
-- Keep explanations factual; do not claim full deployability for generic resource checks.
+- `azw check vm` and `azw check resource` print evidence-based blocker details: a factual `Reason` line and an actionable `Hint` under the verdict table, covering `POLICY_DENIED`, `BLOCKED_FOR_SUB` (with the ARM restriction reason code), `FULL` (with the vCPU shortfall; concept name in older notes: `QUOTA_FULL`), `SKU_NOT_OFFERED` (with same-series sizes the region does list), `QUOTA_UNKNOWN` (missing usage row vs. failed ARM call), `RESOURCE_SUPPORTED`, and `RESOURCE_NOT_SUPPORTED` (with its cause: provider missing, type missing, or region not advertised).
+- Verdict rows carry the evidence behind the reasons (`requiredVcpus`, `skuRestrictions`, `familySizesOffered`, `errorDetail`, `providerRegistered`, `typeLocationCount`, `notSupportedCause`), all additive at `schemaVersion: 1`.
+- Availability footers summarize blockers when nothing deploys, and `pick` / `suggest` failures explain the closest miss.
+- Stable JSON shapes documented in `docs/json-contracts.md` for `availability vm`, `availability resource`, `check vm`, `check resource`, `pick vm`, and `suggest vm`, with payload builders (`src/core/payloads.ts`) and contract tests pinning every field name; check payloads carry a top-level `explanation` object.
+- Explanations stayed factual: generic resource checks state availability, not deployability, and never claim full deployability.
+
+## Planned
 
 ### 0.4.7 - IaC Preflight Foundation
 

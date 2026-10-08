@@ -2,8 +2,9 @@ import { Command } from "commander";
 import { armCacheSummary } from "../core/cache.js";
 import { c, colorEnabled } from "../core/color.js";
 import { exitWithError, ValidationError } from "../core/errors.js";
+import { explainResourceVerdict } from "../core/explain.js";
 import { filterByGeography, listLocations, resolveGeography, shortGeo } from "../core/geo.js";
-import { printInfo, printJson, printTable } from "../core/output.js";
+import { printInfo, printJson, printTable, renderCheckExplanation } from "../core/output.js";
 import {
   addJsonCompatibilityOptions,
   addOutputOption,
@@ -11,6 +12,7 @@ import {
   isScriptOutput,
   resolveOutputMode,
 } from "../core/outputMode.js";
+import { buildAvailabilityResourcePayload } from "../core/payloads.js";
 import { loadPolicyCheck, type PolicySummary } from "../core/policy.js";
 import { scanResourceAvailability } from "../core/resources.js";
 import type { ResourceAvailabilityVerdict } from "../core/types.js";
@@ -139,21 +141,19 @@ export async function runResourceAvailabilityAction(
     }
 
     if (isJsonOutput(mode)) {
-      printJson({
-        schemaVersion: 1,
-        kind: "availability",
-        resourceKind: "resource",
-        target,
-        resolved,
-        confidence: "availability",
-        geography: opts.region ? null : (geo ?? "all"),
-        region: opts.region ? locations[0].name : null,
-        scannedAt: new Date().toISOString(),
-        elapsedMs,
-        cache: armCacheSummary(),
-        policy: policy.summary,
-        regions: rows,
-      });
+      printJson(
+        buildAvailabilityResourcePayload({
+          target,
+          resolved,
+          geography: opts.region ? null : (geo ?? "all"),
+          region: opts.region ? locations[0].name : null,
+          scannedAt: new Date().toISOString(),
+          elapsedMs,
+          cache: armCacheSummary(),
+          policy: policy.summary,
+          rows,
+        }),
+      );
       if (!ok) process.exit(1);
       return;
     }
@@ -165,7 +165,12 @@ export async function runResourceAvailabilityAction(
       const note = `${supported.length} supported, ${hidden} not advertised for ${resolved.resourceType}.`;
       printInfo(colorEnabled() ? c.dim(note) : note);
     }
-    if (!ok) process.exit(1);
+    if (!ok) {
+      for (const line of renderCheckExplanation(explainResourceVerdict(rows[0]))) {
+        printInfo(line);
+      }
+      process.exit(1);
+    }
   } catch (err) {
     exitWithError(err, jsonErrors);
   }

@@ -4,6 +4,7 @@ import type {
   AzLocation,
   AzProvider,
   AzProviderResourceType,
+  NotSupportedCause,
   ResourceAvailabilityVerdict,
 } from "./types.js";
 
@@ -46,6 +47,17 @@ export function resolveResourceType(input: string): ResolvedResourceType | null 
   };
 }
 
+/**
+ * Provider-catalog facts shared by every region row of one scan: which
+ * RESOURCE_NOT_SUPPORTED cause applies, whether the provider is registered,
+ * and how many regions the type advertises. Since 0.4.6.
+ */
+export interface ResourceClassificationContext {
+  cause: NotSupportedCause;
+  providerRegistered: boolean | null;
+  typeLocationCount: number | null;
+}
+
 export async function scanResourceAvailability(opts: {
   target: string;
   locations: AzLocation[];
@@ -71,6 +83,7 @@ export async function scanResourceAvailability(opts: {
   const provider = await getProvider(resolved.namespace, Boolean(opts.refresh));
   const resource = findProviderResource(provider, resolved.typePath);
   const supported = new Set((resource?.locations ?? []).map(normalizeLocationLabel));
+  const context = buildClassificationContext(provider, resource);
 
   const rows = opts.locations.map((location) =>
     classifyResourceLocation({
@@ -78,11 +91,30 @@ export async function scanResourceAvailability(opts: {
       resolved,
       location,
       supported,
+      context,
       policy: opts.policy,
     }),
   );
 
   return { resolved, rows: sortResourceVerdicts(rows), elapsedMs: Date.now() - started };
+}
+
+/** Derive the shared classification facts from the provider-catalog lookup. */
+export function buildClassificationContext(
+  provider: AzProvider | null,
+  resource: AzProviderResourceType | null,
+): ResourceClassificationContext {
+  return {
+    cause: !provider
+      ? "provider-not-found"
+      : !resource
+        ? "type-not-found"
+        : "region-not-advertised",
+    providerRegistered: provider?.registrationState
+      ? provider.registrationState === "Registered"
+      : null,
+    typeLocationCount: resource?.locations?.length ?? null,
+  };
 }
 
 export interface ResourceTypeEntry {
@@ -185,11 +217,12 @@ function findProviderResource(
   return provider?.resourceTypes?.find((r) => r.resourceType.toLowerCase() === normalized) ?? null;
 }
 
-function classifyResourceLocation(opts: {
+export function classifyResourceLocation(opts: {
   target: string;
   resolved: ResolvedResourceType;
   location: AzLocation;
   supported: Set<string>;
+  context: ResourceClassificationContext;
   policy?: PolicyCheck;
 }): ResourceAvailabilityVerdict {
   const base = {
@@ -203,6 +236,10 @@ function classifyResourceLocation(opts: {
     policyAllowed: opts.policy ? true : null,
     policyReason: null,
     confidence: "availability" as const,
+    verdict: "RESOURCE_SUPPORTED" as const,
+    providerRegistered: opts.context.providerRegistered,
+    typeLocationCount: opts.context.typeLocationCount,
+    notSupportedCause: null as NotSupportedCause | null,
   };
 
   if (opts.policy && !opts.policy.isAllowed(opts.location.name)) {
@@ -226,6 +263,7 @@ function classifyResourceLocation(opts: {
   return {
     ...base,
     verdict: isSupported ? "RESOURCE_SUPPORTED" : "RESOURCE_NOT_SUPPORTED",
+    notSupportedCause: isSupported ? null : opts.context.cause,
   };
 }
 

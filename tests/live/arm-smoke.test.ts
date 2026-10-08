@@ -81,7 +81,24 @@ describe.runIf(LIVE)("live ARM resource availability", () => {
     expect(regions[0].region).toBe("westeurope");
   });
 
-  it("rejects an unknown resource type with a JSON ValidationError envelope (exit 3)", () => {
+  it("rejects a syntactically invalid resource type with a JSON ValidationError envelope (exit 3)", () => {
+    const res = runJson([
+      "availability",
+      "resource",
+      "made-up-resource",
+      "--region",
+      "westeurope",
+      "-o",
+      "json",
+    ]);
+    // No slash and no matching alias cannot be a raw resource type at all.
+    expect(res.status).toBe(3);
+    const err = JSON.parse(res.stderr) as Record<string, unknown>;
+    expect(err.status).toBe("error");
+    expect(err.code).toBe("ValidationError");
+  });
+
+  it("reports a nonsense provider namespace as provider-not-supported with cause evidence", () => {
     const res = runJson([
       "availability",
       "resource",
@@ -91,10 +108,22 @@ describe.runIf(LIVE)("live ARM resource availability", () => {
       "-o",
       "json",
     ]);
-    expect(res.status).toBe(3);
-    const err = JSON.parse(res.stderr) as Record<string, unknown>;
-    expect(err.status).toBe("error");
-    expect(err.code).toBe("ValidationError");
+    // A syntactically valid but nonexistent type is a scan outcome (exit 1),
+    // not a validation error: every row is RESOURCE_NOT_SUPPORTED with the
+    // provider-not-found cause and an explanation (since 0.4.6).
+    expect(res.status).toBe(1);
+
+    const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(payload.resourceKind).toBe("resource");
+    const regions = payload.regions as Array<Record<string, unknown>>;
+    expect(regions).toHaveLength(1);
+    // Policy-restricted subscriptions deny the region before the catalog
+    // classification runs; both outcomes are valid, never exit 3.
+    expect(["RESOURCE_NOT_SUPPORTED", "POLICY_DENIED"]).toContain(regions[0].verdict);
+    if (regions[0].verdict === "RESOURCE_NOT_SUPPORTED") {
+      expect(regions[0].notSupportedCause).toBe("provider-not-found");
+      expect(regions[0].providerRegistered).toBeNull();
+    }
   });
 });
 
@@ -151,6 +180,96 @@ describe.runIf(LIVE)("live compare vm", () => {
     expect(payload.regions).toEqual(["westeurope"]);
     const results = payload.results as Array<Record<string, unknown>>;
     expect(results.every((r) => (r.regions as unknown[]).length === 1)).toBe(true);
+  });
+});
+
+describe.runIf(LIVE)("live check contracts (0.4.6)", () => {
+  it("check vm -o json returns the documented payload with an explanation", () => {
+    const res = runJson(["check", "vm", "B1s", "--region", "westeurope", "-o", "json"]);
+    expect([0, 1]).toContain(res.status);
+
+    const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(payload.schemaVersion).toBe(1);
+    expect(payload.kind).toBe("check");
+    expect(payload.resourceKind).toBe("vm");
+    expect(payload.target).toBe("Standard_B1s");
+    expect(payload.region).toBe("westeurope");
+    expect(payload.confidence).toBe("deployability");
+    expect(VM_VERDICTS.has(String(payload.verdict))).toBe(true);
+
+    // `checks` is a single row object, never an array.
+    const checks = payload.checks as Record<string, unknown>;
+    expect(Array.isArray(checks)).toBe(false);
+    expect(checks.region).toBe("westeurope");
+    expect(VM_VERDICTS.has(String(checks.verdict))).toBe(true);
+
+    // Evidence fields (since 0.4.6) are always present, null when unused.
+    expect(["number", "object"]).toContain(typeof checks.requiredVcpus);
+    expect(["object", "boolean"]).toContain(typeof checks.skuRestrictions);
+    expect(["object", "boolean"]).toContain(typeof checks.familySizesOffered);
+    expect(["string", "object"]).toContain(typeof checks.errorDetail);
+
+    // Explanation mirrors the verdict.
+    const explanation = payload.explanation as Record<string, unknown>;
+    expect(explanation.code).toBe(payload.verdict);
+    expect(typeof explanation.reason).toBe("string");
+    expect(explanation.reason.length).toBeGreaterThan(0);
+    expect(["string", "object"]).toContain(typeof explanation.hint);
+  });
+
+  it("check resource -o json returns the documented payload with cause evidence", () => {
+    const res = runJson(["check", "resource", "storage-account", "--region", "westeurope", "-o", "json"]);
+    expect([0, 1]).toContain(res.status);
+
+    const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(payload.schemaVersion).toBe(1);
+    expect(payload.kind).toBe("check");
+    expect(payload.resourceKind).toBe("resource");
+    expect(payload.confidence).toBe("availability");
+    expect(RESOURCE_VERDICTS.has(String(payload.verdict))).toBe(true);
+
+    const checks = payload.checks as Record<string, unknown>;
+    expect(Array.isArray(checks)).toBe(false);
+    expect(["boolean", "object"]).toContain(typeof checks.providerRegistered);
+    expect(["number", "object"]).toContain(typeof checks.typeLocationCount);
+    if (checks.verdict === "RESOURCE_NOT_SUPPORTED") {
+      expect(["provider-not-found", "type-not-found", "region-not-advertised"]).toContain(
+        checks.notSupportedCause,
+      );
+    } else {
+      expect(checks.notSupportedCause).toBeNull();
+    }
+
+    const explanation = payload.explanation as Record<string, unknown>;
+    expect(explanation.code).toBe(payload.verdict);
+    expect(typeof explanation.reason).toBe("string");
+  });
+
+  it("availability vm single region -o json carries evidence fields on every row", () => {
+    const res = runJson(["availability", "vm", "B1s", "--region", "westeurope", "-o", "json"]);
+    expect([0, 1]).toContain(res.status);
+
+    const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(payload.kind).toBe("availability");
+    expect(payload.resourceKind).toBe("vm");
+    expect(payload.sku).toBe("Standard_B1s");
+    expect(typeof payload.scannedAt).toBe("string");
+
+    const regions = payload.regions as Array<Record<string, unknown>>;
+    expect(regions).toHaveLength(1);
+    const row = regions[0];
+    expect(VM_VERDICTS.has(String(row.verdict))).toBe(true);
+    expect("requiredVcpus" in row).toBe(true);
+    expect("skuRestrictions" in row).toBe(true);
+    expect("familySizesOffered" in row).toBe(true);
+    expect("errorDetail" in row).toBe(true);
+  });
+
+  it("check vm human table prints a Reason line under the verdict", () => {
+    const res = runJson(["check", "vm", "B1s", "--region", "westeurope"]);
+    expect([0, 1]).toContain(res.status);
+    expect(res.stdout).toContain("VERDICT");
+    expect(res.stdout).toContain("Reason: ");
   });
 });
 
