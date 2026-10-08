@@ -155,6 +155,15 @@ Planned improvements and features for upcoming releases. This is a living docume
 - Covers Terraform VMs (including legacy `vm_size`) and virtual machine scale sets, plus the Bicep equivalents; generic resource types inside IaC files are deferred until resource verdicts mature.
 - Stable JSON contract with `kind: "verify"`: `files`, `formats`, `summary`, per-pair `results[]` rows carrying source metadata + the pinned verdict row + `explanation`, and a `skipped[]` findings list.
 
+### 0.4.8 - Verify Generic Resources
+
+- `azw verify` broadens beyond VMs: statically-known `type + location` pairs for common generic resources — storage accounts, key vaults, web/function apps, service plans, AKS clusters, PostgreSQL flexible servers — are checked against the ARM provider catalog with availability confidence (never deployability); verdicts, evidence, and explanations are identical to `azw check resource`.
+- A curated Terraform/Bicep type-mapping table (`IAC_GENERIC_RESOURCE_TYPES`) over the standard resource aliases, kept in sync by a test; unmapped types stay ignored, and dynamic locations become skipped findings exactly like VMs.
+- All generic pairs share one cached provider-catalog call per run, so the cost stays flat regardless of how many resources the files contain.
+- Additive JSON contract at `schemaVersion: 1`: a `genericResources` section (`seen`, `checked`, `skipped`, `supportedCount`, `verdictCounts`, `results`, `skippedFindings`) keeps the VM `summary` / `results` / `skipped` fields' meaning unchanged.
+- Exit `1` when a checked VM pair is blocked or a generic resource is not advertised / policy-denied in its region; skips still never fail the run.
+- CI workflows bumped to `actions/checkout@v5` and `actions/setup-node@v5` ahead of `ubuntu-latest` moving to Ubuntu 26 (2026-10-19).
+
 ## Planned
 
 ### Later

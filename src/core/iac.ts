@@ -1,11 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { ValidationError } from "./errors.js";
+import { RESOURCE_ALIASES } from "./resources.js";
 import { normalizeSku } from "./sku.js";
 
 /**
  * Lightweight IaC file parsing for `azw verify` — extract statically-known
  * `location + size` pairs from Terraform (.tf) and Bicep (.bicep) files so
- * each pair can run through the same deployability engine as `azw check vm`.
+ * each pair can run through the same deployability engine as `azw check vm`,
+ * plus generic `type + location` pairs (since 0.4.8) that run through the
+ * provider-catalog availability engine of `azw check resource`.
  *
  * This is deliberately NOT a language toolchain:
  * - Only literal string/number values are resolved. Anything dynamic
@@ -15,8 +18,9 @@ import { normalizeSku } from "./sku.js";
  * - No syntax validation, no module/source following, no variable
  *   evaluation. The scanner stays quiet about constructs it does not
  *   understand instead of failing on them.
- * - Only VM and virtual machine scale set resources are extracted in 0.4.7;
- *   every other resource type is ignored without claims about it.
+ * - Only mapped resource types are extracted: VMs and scale sets since
+ *   0.4.7, the generic types in IAC_GENERIC_RESOURCE_TYPES since 0.4.8.
+ *   Every other resource type is ignored without claims about it.
  *
  * Line counting survives comment/heredoc stripping (stripped lines are
  * blanked in place), so every pair and skip points at the line of its
@@ -45,6 +49,35 @@ export const TERRAFORM_VM_RESOURCES: Record<string, "vm" | "vmss"> = {
 export const BICEP_VM_RESOURCES: Record<string, "vm" | "vmss"> = {
   "Microsoft.Compute/virtualMachines": "vm",
   "Microsoft.Compute/virtualMachineScaleSets": "vmss",
+};
+
+/** Terraform resource types → the Azure resource type they deploy. */
+const TERRAFORM_GENERIC_RESOURCES: Record<string, string> = {
+  azurerm_storage_account: "Microsoft.Storage/storageAccounts",
+  azurerm_key_vault: "Microsoft.KeyVault/vaults",
+  // Sites covers web apps and function apps — all deploy Microsoft.Web/sites.
+  azurerm_linux_web_app: "Microsoft.Web/sites",
+  azurerm_windows_web_app: "Microsoft.Web/sites",
+  azurerm_app_service: "Microsoft.Web/sites",
+  azurerm_linux_function_app: "Microsoft.Web/sites",
+  azurerm_windows_function_app: "Microsoft.Web/sites",
+  azurerm_function_app: "Microsoft.Web/sites",
+  azurerm_service_plan: "Microsoft.Web/serverfarms",
+  azurerm_kubernetes_cluster: "Microsoft.ContainerService/managedClusters",
+  azurerm_postgresql_flexible_server: "Microsoft.DBforPostgreSQL/flexibleServers",
+};
+
+/**
+ * IaC resource type as written — Terraform `azurerm_*` or Bicep `Microsoft.*`
+ * — → the Azure resource type `verify` checks through the ARM provider
+ * catalog (availability, never deployability). Bicep writes ARM types
+ * directly, so its entries are identity mappings over the RESOURCE_ALIASES
+ * targets; Terraform names are listed explicitly. Types not in this table
+ * are ignored. Since 0.4.8.
+ */
+export const IAC_GENERIC_RESOURCE_TYPES: Record<string, string> = {
+  ...TERRAFORM_GENERIC_RESOURCES,
+  ...Object.fromEntries(Object.values(RESOURCE_ALIASES).map((t) => [t, t])),
 };
 
 /** A statically-resolvable `location + size` pair found in a file. */
@@ -78,13 +111,34 @@ export interface IacSkippedResource {
   detail: string;
 }
 
+/** A statically-resolvable generic `type + location` pair. Since 0.4.8. */
+export interface IacResourcePair {
+  file: string;
+  /** 1-based line of the `resource` declaration. */
+  line: number;
+  format: IacFormat;
+  /** The resource type as written (`azurerm_storage_account` / `Microsoft.Storage/storageAccounts`). */
+  resourceType: string;
+  /** The Azure resource type the pair is checked against. */
+  armType: string;
+  resourceName: string;
+  /** The location exactly as written, e.g. `westeurope` or `West Europe`. */
+  locationLiteral: string;
+}
+
 export interface IacFileParseResult {
   file: string;
   format: IacFormat;
   pairs: IacVmPair[];
+  /** Generic resource pairs found. Since 0.4.8. */
+  resourcePairs: IacResourcePair[];
   skipped: IacSkippedResource[];
+  /** Generic resource skips, kept separate from VM findings. Since 0.4.8. */
+  resourceSkipped: IacSkippedResource[];
   /** VM + scale-set resources seen, checkable or skipped. */
   vmResourceCount: number;
+  /** Generic resources seen (mapped types only), checkable or skipped. Since 0.4.8. */
+  genericResourceCount: number;
 }
 
 /** Validate one CLI-given path by extension. Throws ValidationError. */
@@ -137,8 +191,11 @@ export function parseIacContent(
     file,
     format,
     pairs: parsed.pairs.map((p) => ({ ...p, file })),
+    resourcePairs: parsed.resourcePairs.map((p) => ({ ...p, file })),
     skipped: parsed.skipped.map((s) => ({ ...s, file })),
+    resourceSkipped: parsed.resourceSkipped.map((s) => ({ ...s, file })),
     vmResourceCount: parsed.vmResourceCount,
+    genericResourceCount: parsed.genericResourceCount,
   };
 }
 
@@ -218,6 +275,42 @@ function classifyVmResource(
       locationLiteral: location.literal,
       capacity,
     },
+    skip: null,
+  };
+}
+
+/**
+ * Same rule as classifyVmResource, minus the sku: a generic resource is
+ * checkable when its location is a plain literal. Dynamic locations become
+ * `dynamic-location` skips echoing the raw expression. Since 0.4.8.
+ */
+function classifyGenericResource(
+  meta: {
+    file: string;
+    line: number;
+    format: IacFormat;
+    resourceType: string;
+    armType: string;
+    resourceName: string;
+  },
+  location: AttrFinding,
+): { pair: IacResourcePair | null; skip: IacSkippedResource | null } {
+  if (location.literal === null) {
+    return {
+      pair: null,
+      skip: {
+        file: meta.file,
+        line: meta.line,
+        format: meta.format,
+        resourceType: meta.resourceType,
+        resourceName: meta.resourceName,
+        reason: "dynamic-location",
+        detail: location.raw ?? "no location attribute found",
+      },
+    };
+  }
+  return {
+    pair: { ...meta, locationLiteral: location.literal },
     skip: null,
   };
 }
@@ -348,8 +441,11 @@ function findSubBlock(
 function parseTerraform(content: string): Omit<IacFileParseResult, "file" | "format"> {
   const lines = stripTerraformNoise(content);
   const pairs: IacVmPair[] = [];
+  const resourcePairs: IacResourcePair[] = [];
   const skipped: IacSkippedResource[] = [];
+  const resourceSkipped: IacSkippedResource[] = [];
   let vmResourceCount = 0;
+  let genericResourceCount = 0;
   let i = 0;
 
   while (i < lines.length) {
@@ -362,6 +458,7 @@ function parseTerraform(content: string): Omit<IacFileParseResult, "file" | "for
     const resourceType = header[1];
     const resourceName = header[2];
     const kind = TERRAFORM_VM_RESOURCES[resourceType];
+    const armType = IAC_GENERIC_RESOURCE_TYPES[resourceType];
 
     // The block body starts at the header's opening brace (last match char).
     const span = extractDelimited(lines, i, lead + header[0].length - 1, "{", '"');
@@ -394,6 +491,15 @@ function parseTerraform(content: string): Omit<IacFileParseResult, "file" | "for
       );
       if (pair) pairs.push(pair);
       if (skip) skipped.push(skip);
+    } else if (armType) {
+      genericResourceCount++;
+      const location = findAttr(bodyLines, /^\s*location\s*=\s*(.+?)\s*$/);
+      const { pair, skip } = classifyGenericResource(
+        { file: "", line: i + 1, format: "terraform", resourceType, armType, resourceName },
+        location,
+      );
+      if (pair) resourcePairs.push(pair);
+      if (skip) resourceSkipped.push(skip);
     }
 
     // Advance past the whole block either way so nothing inside can
@@ -401,7 +507,14 @@ function parseTerraform(content: string): Omit<IacFileParseResult, "file" | "for
     i = span ? span.endLine + 1 : i + 1;
   }
 
-  return { pairs, skipped, vmResourceCount };
+  return {
+    pairs,
+    resourcePairs,
+    skipped,
+    resourceSkipped,
+    vmResourceCount,
+    genericResourceCount,
+  };
 }
 
 /**
@@ -481,8 +594,11 @@ function stripTerraformNoise(content: string): string[] {
 function parseBicep(content: string): Omit<IacFileParseResult, "file" | "format"> {
   const lines = stripBicepNoise(content);
   const pairs: IacVmPair[] = [];
+  const resourcePairs: IacResourcePair[] = [];
   const skipped: IacSkippedResource[] = [];
+  const resourceSkipped: IacSkippedResource[] = [];
   let vmResourceCount = 0;
+  let genericResourceCount = 0;
   let i = 0;
 
   while (i < lines.length) {
@@ -499,6 +615,7 @@ function parseBicep(content: string): Omit<IacFileParseResult, "file" | "format"
       const symbolicName = header[1];
       const bareType = header[2].split("@")[0];
       const kind = BICEP_VM_RESOURCES[bareType];
+      const armType = IAC_GENERIC_RESOURCE_TYPES[bareType];
 
       // The value starts at the first `{` or `[` after the `=`.
       const span = extractDelimited(lines, i, lead + header[0].length, "{[", "'\"");
@@ -526,6 +643,15 @@ function parseBicep(content: string): Omit<IacFileParseResult, "file" | "format"
         );
         if (pair) pairs.push(pair);
         if (skip) skipped.push(skip);
+      } else if (armType) {
+        genericResourceCount++;
+        const location = findAttr(bodyLines, /^\s*location\s*:\s*(.+?)\s*$/);
+        const { pair, skip } = classifyGenericResource(
+          { file: "", line: i + 1, format: "bicep", resourceType: bareType, armType, resourceName: symbolicName },
+          location,
+        );
+        if (pair) resourcePairs.push(pair);
+        if (skip) resourceSkipped.push(skip);
       }
 
       i = span ? span.endLine + 1 : i + 1;
@@ -534,7 +660,14 @@ function parseBicep(content: string): Omit<IacFileParseResult, "file" | "format"
     }
   }
 
-  return { pairs, skipped, vmResourceCount };
+  return {
+    pairs,
+    resourcePairs,
+    skipped,
+    resourceSkipped,
+    vmResourceCount,
+    genericResourceCount,
+  };
 }
 
 /**

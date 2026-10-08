@@ -90,7 +90,12 @@ Do not add new verbs unless an existing verb cannot describe the user intent.
 
 `compare` ships as VM-only (`azw compare vm <sku-list> [scope]`, 0.4.5). It supports `table`, `json`, and `compact`; `value` and `name` are rejected as validation errors because a comparison of several targets has no single script value or one-name-per-line meaning. Resource comparison is deferred until generic resource verdicts mature.
 
-`verify` ships as VM-only (`azw verify <files...>`, 0.4.7). It takes one or more `.tf` / `.bicep` file paths — no scope flags, because the regions come from the files. It parses statically-literal `location + size` pairs (VMs and scale sets) and runs each through the same deployability chain as `check vm`. Dynamic values (`var.location`, `"${var.size}"`, `resourceGroup().location`) are reported as skipped findings with the raw expression echoed, never guessed. `value` and `name` are rejected as validation errors. Exit `1` only when a checked pair is blocked; skips and zero-checkable-files runs exit `0` so variable-driven files stay a warning, not a CI gate.
+`verify` (`azw verify <files...>`) takes one or more `.tf` / `.bicep` file paths — no scope flags, because the regions come from the files. It parses statically-literal pairs and checks them before deployment:
+
+- VM `location + size` pairs (VMs and scale sets, since 0.4.7) run through the same deployability chain as `check vm`; scale-set `capacity` multiplies the vCPU requirement.
+- Generic `type + location` pairs (since 0.4.8) — storage accounts, key vaults, web/function apps, service plans, AKS clusters, PostgreSQL flexible servers, via a Terraform/Bicep type-mapping table over the standard resource aliases — run through the provider-catalog availability engine of `check resource`. Those rows carry `availability` confidence and never claim deployability.
+
+Dynamic values (`var.location`, `"${var.size}"`, `resourceGroup().location`) are reported as skipped findings with the raw expression echoed, never guessed. `value` and `name` are rejected as validation errors. Exit `1` only when a checked pair is blocked (a blocked VM pair, or a generic resource that is not advertised or policy-denied in its region); skips and zero-checkable-files runs exit `0` so variable-driven files stay a warning, not a CI gate.
 
 ## Kinds
 
@@ -353,7 +358,6 @@ Confidence values:
 | `azw check postgres --sku <sku> --region <name>` | Deep PostgreSQL availability check |
 | `azw check aks --node-size <sku> --region <name>` | AKS availability with VM node-size check |
 | `azw check appservice --plan <sku> --region <name>` | App Service plan availability check |
-| `azw verify` beyond VMs | Generic-resource pairs inside IaC files, once resource verdicts mature |
 
 ## Naming Decisions
 

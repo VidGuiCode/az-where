@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.8
+
+### Verify Generic Resources
+
+- `azw verify` now checks common generic resources inside Terraform/Bicep files, not just VMs: `azurerm_storage_account`, `azurerm_key_vault`, `azurerm_linux_web_app` / `azurerm_windows_web_app` / `azurerm_app_service` and the function-app variants, `azurerm_service_plan`, `azurerm_kubernetes_cluster`, and `azurerm_postgresql_flexible_server`, plus their `Microsoft.*` Bicep equivalents over the standard resource aliases (`Microsoft.Storage/storageAccounts`, `Microsoft.KeyVault/vaults`, `Microsoft.Web/sites`, `Microsoft.Web/serverfarms`, `Microsoft.ContainerService/managedClusters`, `Microsoft.DBforPostgreSQL/flexibleServers`).
+- Generic pairs run through the same provider-catalog engine as `azw check resource`: verdict rows, evidence (`providerRegistered`, `typeLocationCount`, `notSupportedCause`), and explanations are identical, and every row carries `confidence: "availability"` — generic rows never claim deployability.
+- The Terraform/Bicep type mapping is one curated table (`IAC_GENERIC_RESOURCE_TYPES` in `src/core/iac.ts`) whose Bicep side is derived from the resource alias table; a sync test forces every alias to also have a Terraform mapping, so new aliases are conscious decisions.
+- Cost stays flat: all generic pairs share one cached provider-catalog call per run (one live call with `--refresh`), independent of how many resources or types the files contain; VM pairs keep their per-region grouping from 0.4.7.
+- Human output adds a `Generic resources (availability, not deployability)` table showing the alias, verdict, and confidence, `Reason`/`Hint` lines for blocked pairs, its own blocker summary, and a footer reporting both VM and generic counts. Dynamic locations on mapped types become skipped findings with the raw expression echoed, exactly like VMs; unmapped resource types stay ignored.
+- Stable JSON contract: a new additive `genericResources` section (`seen`, `checked`, `skipped`, `supportedCount`, `verdictCounts`, `results`, `skippedFindings`) at `schemaVersion: 1` — the VM `summary` / `results` / `skipped` fields keep their exact 0.4.7 meaning, and the section is present with zeros and empty arrays when a run has no generic resources.
+- Exit codes: `1` when any checked pair is blocked — a blocked VM pair, or a generic resource that is `RESOURCE_NOT_SUPPORTED` or `POLICY_DENIED` in its region; skips and runs with nothing statically checkable still exit `0`.
+
+### CI
+
+- Bump `actions/checkout` and `actions/setup-node` to `@v5` in the CI and release workflows, ahead of `ubuntu-latest` moving to Ubuntu 26 on 2026-10-19.
+
 ## 0.4.7
 
 ### IaC Preflight

@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { ValidationError } from "../../src/core/errors.js";
 import {
   detectIacFormat,
+  IAC_GENERIC_RESOURCE_TYPES,
   parseIacContent,
   type IacFileParseResult,
 } from "../../src/core/iac.js";
+import { RESOURCE_ALIASES } from "../../src/core/resources.js";
 
 const parseTf = (content: string): IacFileParseResult =>
   parseIacContent("main.tf", "terraform", content);
@@ -132,6 +134,66 @@ resource stg 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   sku: {
     name: 'Standard_LRS'
   }
+}
+`;
+
+/* ── Generic resource fixtures (since 0.4.8) ───────────────────────────── */
+
+const TF_GENERIC = `resource "azurerm_resource_group" "rg" {
+  name     = "rg-demo"
+  location = "westeurope"
+}
+
+resource "azurerm_storage_account" "stg" {
+  name                     = "stgdemo"
+  location                 = "westeurope"
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+}
+
+resource "azurerm_key_vault" "kv" {
+  name     = "kv-demo"
+  location = azurerm_resource_group.rg.location
+}
+
+resource "azurerm_kubernetes_cluster" "aks" {
+  name    = "aks-demo"
+  location = "northeurope"
+}
+
+resource "azurerm_postgresql_flexible_server" "pg" {
+  name     = "pg-demo"
+  location = "West Europe"
+}
+
+resource "azurerm_linux_web_app" "app" {
+  name     = "app-demo"
+  location = "westeurope"
+}
+
+resource "azurerm_service_plan" "plan" {
+  name     = "plan-demo"
+  location = "francecentral"
+}
+
+resource "azurerm_virtual_network" "vnet" {
+  name     = "vnet-demo"
+  location = "westeurope"
+}
+`;
+
+const BICEP_GENERIC = `resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: 'kv'
+  location: 'westeurope'
+}
+
+resource aks 'Microsoft.ContainerService/managedClusters@2024-05-01' = {
+  name: 'aks'
+  location: location
+}
+
+resource stgExisting 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+  name: 'stg-existing'
 }
 `;
 
@@ -439,5 +501,122 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
     const result = parseBicep(content);
     expect(result.vmResourceCount).toBe(1);
     expect(result.pairs[0]?.resourceName).toBe("vm");
+  });
+});
+
+/* ── Generic resource type mapping (since 0.4.8) ──────────────────────── */
+
+describe("IAC_GENERIC_RESOURCE_TYPES", () => {
+  it("maps Terraform azurerm_* names onto their Azure resource types", () => {
+    expect(IAC_GENERIC_RESOURCE_TYPES.azurerm_storage_account).toBe(
+      "Microsoft.Storage/storageAccounts",
+    );
+    expect(IAC_GENERIC_RESOURCE_TYPES.azurerm_key_vault).toBe("Microsoft.KeyVault/vaults");
+    expect(IAC_GENERIC_RESOURCE_TYPES.azurerm_service_plan).toBe("Microsoft.Web/serverfarms");
+    expect(IAC_GENERIC_RESOURCE_TYPES.azurerm_kubernetes_cluster).toBe(
+      "Microsoft.ContainerService/managedClusters",
+    );
+    expect(IAC_GENERIC_RESOURCE_TYPES.azurerm_postgresql_flexible_server).toBe(
+      "Microsoft.DBforPostgreSQL/flexibleServers",
+    );
+  });
+
+  it("stays in sync with RESOURCE_ALIASES: identity entries plus at least one Terraform name each", () => {
+    for (const armType of Object.values(RESOURCE_ALIASES)) {
+      // Bicep writes ARM types directly, so every alias target checks itself.
+      expect(IAC_GENERIC_RESOURCE_TYPES[armType]).toBe(armType);
+      // Every alias target must also be reachable from Terraform — adding an
+      // alias without a Terraform mapping fails here on purpose.
+      const terraformNames = Object.entries(IAC_GENERIC_RESOURCE_TYPES).filter(
+        ([key, value]) => key.startsWith("azurerm_") && value === armType,
+      );
+      expect(terraformNames.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+/* ── Generic resource parsing (since 0.4.8) ───────────────────────────── */
+
+describe("parseTerraform generic resources", () => {
+  it("extracts literal type+location pairs with the mapped ARM type", () => {
+    const result = parseTf(TF_GENERIC);
+    expect(result.resourcePairs.find((p) => p.resourceName === "stg")).toMatchObject({
+      file: "main.tf",
+      format: "terraform",
+      resourceType: "azurerm_storage_account",
+      armType: "Microsoft.Storage/storageAccounts",
+      locationLiteral: "westeurope",
+    });
+    expect(result.resourcePairs.find((p) => p.resourceName === "aks")?.armType).toBe(
+      "Microsoft.ContainerService/managedClusters",
+    );
+    expect(result.resourcePairs.find((p) => p.resourceName === "pg")?.locationLiteral).toBe(
+      "West Europe",
+    );
+  });
+
+  it("skips dynamic locations on mapped types, echoing the raw expression", () => {
+    const result = parseTf(TF_GENERIC);
+    expect(result.resourceSkipped).toHaveLength(1);
+    expect(result.resourceSkipped[0]).toMatchObject({
+      resourceName: "kv",
+      resourceType: "azurerm_key_vault",
+      reason: "dynamic-location",
+      detail: "azurerm_resource_group.rg.location",
+    });
+  });
+
+  it("counts only mapped types — resource groups, vnets, and other types are ignored", () => {
+    const result = parseTf(TF_GENERIC);
+    expect(result.genericResourceCount).toBe(6); // stg, aks, pg, app, plan + skipped kv
+    expect(result.vmResourceCount).toBe(0);
+    const names = [
+      ...result.resourcePairs.map((p) => p.resourceName),
+      ...result.resourceSkipped.map((s) => s.resourceName),
+    ];
+    expect(names).not.toContain("rg");
+    expect(names).not.toContain("vnet");
+  });
+
+  it("keeps VM and generic findings separate for a mixed file", () => {
+    const result = parseTf(`${TF_MIXED}\n${TF_GENERIC}`);
+    expect(result.vmResourceCount).toBe(5);
+    expect(result.genericResourceCount).toBe(6);
+    expect(result.pairs).toHaveLength(4);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.resourcePairs).toHaveLength(5);
+    expect(result.resourceSkipped).toHaveLength(1);
+  });
+});
+
+describe("parseBicep generic resources", () => {
+  it("extracts the storage account pair from the mixed fixture, sku objects and all", () => {
+    const result = parseBicep(BICEP_MIXED);
+    expect(result.resourcePairs).toHaveLength(1);
+    expect(result.resourcePairs[0]).toMatchObject({
+      file: "main.bicep",
+      format: "bicep",
+      resourceType: "Microsoft.Storage/storageAccounts",
+      armType: "Microsoft.Storage/storageAccounts",
+      resourceName: "stg",
+      locationLiteral: "westeurope",
+    });
+    expect(result.genericResourceCount).toBe(1);
+  });
+
+  it("checks literal pairs and skips param-driven locations with existing resources untouched", () => {
+    const result = parseBicep(BICEP_GENERIC);
+    expect(result.resourcePairs).toHaveLength(1);
+    expect(result.resourcePairs[0]).toMatchObject({
+      resourceName: "kv",
+      armType: "Microsoft.KeyVault/vaults",
+    });
+    expect(result.resourceSkipped).toHaveLength(1);
+    expect(result.resourceSkipped[0]).toMatchObject({
+      resourceName: "aks",
+      reason: "dynamic-location",
+      detail: "location",
+    });
+    expect(result.genericResourceCount).toBe(2);
   });
 });

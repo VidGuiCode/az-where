@@ -45,7 +45,7 @@ function splash(version: string): string {
                               One-region VM deployability verdict
     azw compare vm B1s,B2s,D2s_v5 --eu
                               Region × size deployability matrix
-    azw verify main.tf       Preflight IaC: check VM size+region pairs before apply
+    azw verify main.tf       Preflight IaC: check VM sizes and resource regions before apply
     azw pick vm B1s --eu      One region name (for terraform / scripts)
     azw check resource storage-account --region westeurope
                               Generic resource availability check

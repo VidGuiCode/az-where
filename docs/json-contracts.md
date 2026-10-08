@@ -198,7 +198,7 @@ Documented with 0.4.5: a shared `regions` string axis plus `results[]` — one p
 
 ### `azw verify <files...> -o json` (since 0.4.7)
 
-IaC preflight: one `results[]` row per statically-known `location + size` pair parsed from Terraform/Bicep files, plus a `skipped[]` list of VM resources that could not be checked.
+IaC preflight: one `results[]` row per statically-known `location + size` pair parsed from Terraform/Bicep files, plus a `skipped[]` list of VM resources that could not be checked. Since 0.4.8, generic `type + location` pairs (storage accounts, key vaults, web/function apps, service plans, AKS, PostgreSQL flexible servers, …) are checked in a separate `genericResources` section.
 
 ```json
 {
@@ -236,6 +236,37 @@ IaC preflight: one `results[]` row per statically-known `location + size` pair p
       "detail": "azurerm_resource_group.rg.location"
     }
   ],
+  "genericResources": {
+    "seen": 2,
+    "checked": 1,
+    "skipped": 1,
+    "supportedCount": 1,
+    "verdictCounts": { "RESOURCE_SUPPORTED": 1, "RESOURCE_NOT_SUPPORTED": 0, "POLICY_DENIED": 0 },
+    "results": [
+      {
+        "file": "main.tf",
+        "line": 48,
+        "format": "terraform",
+        "resourceType": "Microsoft.Storage/storageAccounts",
+        "sourceType": "azurerm_storage_account",
+        "resourceName": "stg",
+        "region": "westeurope",
+        "checks": { "kind": "resource", "region": "westeurope", "...": "the full resource row, identical to azw check resource" },
+        "explanation": { "code": "RESOURCE_SUPPORTED", "reason": "…availability, not deployability…", "hint": null }
+      }
+    ],
+    "skippedFindings": [
+      {
+        "file": "main.tf",
+        "line": 60,
+        "format": "terraform",
+        "resourceType": "azurerm_key_vault",
+        "resourceName": "kv",
+        "reason": "dynamic-location",
+        "detail": "var.location"
+      }
+    ]
+  },
   "cache": { "...": "..." },
   "policy": { "...": "..." }
 }
@@ -244,7 +275,8 @@ IaC preflight: one `results[]` row per statically-known `location + size` pair p
 - `results[]` rows embed the pinned 16-field VM verdict row as `checks` plus a per-row `explanation`, exactly like `azw check vm`; `region` is the ARM name the file's location literal resolved to (display-name literals like `West Europe` resolve too).
 - `capacity` is a literal scale-set instance count (quota checks multiply the vCPU need by it); `1` for single VMs, `null` when the capacity expression is dynamic (treated as a single instance).
 - `skipped[].reason` is a finding, not a verdict: `dynamic-location`, `dynamic-sku`, or `unknown-region` (the literal matched no ARM region). `detail` echoes the raw expression or literal.
-- Exit `1` only when a checked pair is blocked; skipped resources never fail the run. Zero checkable pairs exits `0` — the payload states `checked: 0`.
+- `genericResources` **(since 0.4.8)** keeps the VM `summary` / `results` / `skipped` fields meaning exactly what they meant in 0.4.7: generic findings never mix into them. `genericResources.results[]` rows carry `resourceType` (the ARM type checked), `sourceType` (the type as written in the file), and the pinned resource row as `checks` — every row carries `confidence: "availability"` and never claims deployability. The top-level `confidence: "deployability"` describes `results` (VM rows) only. `genericResources` is always present, with zeros and empty arrays when no mapped generic types were found.
+- Exit `1` only when a checked pair is blocked — a blocked VM pair, or a generic resource that is `RESOURCE_NOT_SUPPORTED` or `POLICY_DENIED` in its region; skipped resources never fail the run. Zero checkable pairs exits `0` — the payload states `checked: 0`.
 - `--output value` and `--output name` are rejected as validation errors before any Azure call.
 
 ## Error Envelope

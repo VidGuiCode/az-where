@@ -1,15 +1,25 @@
 import { describe, expect, it } from "vitest";
-import type { IacVmPair } from "../../src/core/iac.js";
+import type { IacResourcePair, IacVmPair } from "../../src/core/iac.js";
 import {
+  buildVerifyResourceTable,
   buildVerifyTable,
   classifyVerifyRegion,
+  classifyVerifyResourcePairs,
+  countResourceVerdicts,
   countVerdicts,
   matchVerifyLocations,
   pairKey,
+  toVerifyResourceRow,
   toVerifyRow,
   verifyBlockerSummary,
+  verifyResourceBlockerSummary,
 } from "../../src/core/verify.js";
-import type { AzLocation, AzVmSku, AzVmUsage } from "../../src/core/types.js";
+import type {
+  AzLocation,
+  AzProvider,
+  AzVmSku,
+  AzVmUsage,
+} from "../../src/core/types.js";
 
 const loc = (name: string, displayName = name, geographyGroup = "Europe"): AzLocation => ({
   name,
@@ -53,6 +63,28 @@ const pair = (overrides: Partial<IacVmPair> = {}): IacVmPair => ({
   capacity: 1,
   ...overrides,
 });
+
+const resourcePair = (overrides: Partial<IacResourcePair> = {}): IacResourcePair => ({
+  file: "main.tf",
+  line: 8,
+  format: "terraform",
+  resourceType: "azurerm_storage_account",
+  armType: "Microsoft.Storage/storageAccounts",
+  resourceName: "stg",
+  locationLiteral: "westeurope",
+  ...overrides,
+});
+
+const PROVIDERS: AzProvider[] = [
+  {
+    namespace: "Microsoft.Storage",
+    registrationState: "Registered",
+    resourceTypes: [
+      { resourceType: "storageAccounts", locations: ["West Europe", "East US"] },
+    ],
+  },
+  { namespace: "Microsoft.ContainerService", resourceTypes: [] },
+];
 
 function classify(
   pairs: IacVmPair[],
@@ -259,6 +291,176 @@ describe("summary helpers", () => {
   });
 });
 
+describe("matchVerifyLocations (generic resource pairs)", () => {
+  const locations = [
+    loc("westeurope", "West Europe"),
+    loc("francecentral", "France Central"),
+  ];
+
+  it("matches resource pairs the same way as VM pairs", () => {
+    const { matched, unmatched } = matchVerifyLocations(
+      [resourcePair({ locationLiteral: "West Europe" })],
+      locations,
+    );
+    expect(matched).toHaveLength(1);
+    expect(matched[0]?.location.name).toBe("westeurope");
+    expect(unmatched).toHaveLength(0);
+  });
+
+  it("turns unmatched resource literals into unknown-region skips with the IaC type echoed", () => {
+    const { matched, unmatched } = matchVerifyLocations(
+      [resourcePair({ resourceName: "stg", locationLiteral: "atlantic" })],
+      locations,
+    );
+    expect(matched).toHaveLength(0);
+    expect(unmatched[0]).toMatchObject({
+      resourceName: "stg",
+      resourceType: "azurerm_storage_account",
+      reason: "unknown-region",
+      detail: "atlantic",
+    });
+  });
+});
+
+describe("classifyVerifyResourcePairs", () => {
+  it("returns RESOURCE_SUPPORTED when the catalog advertises the region", () => {
+    const rows = classifyVerifyResourcePairs({
+      pairs: [{ pair: resourcePair(), location: loc("westeurope") }],
+      providers: PROVIDERS,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.checks.verdict).toBe("RESOURCE_SUPPORTED");
+    expect(rows[0]?.checks.confidence).toBe("availability");
+    expect(rows[0]?.checks.providerRegistered).toBe(true);
+  });
+
+  it("returns RESOURCE_NOT_SUPPORTED with the cause when the region is not advertised", () => {
+    const rows = classifyVerifyResourcePairs({
+      pairs: [{ pair: resourcePair({ locationLiteral: "eastasia" }), location: loc("eastasia") }],
+      providers: PROVIDERS,
+    });
+    expect(rows[0]?.checks.verdict).toBe("RESOURCE_NOT_SUPPORTED");
+    expect(rows[0]?.checks.notSupportedCause).toBe("region-not-advertised");
+    expect(rows[0]?.explanation.code).toBe("RESOURCE_NOT_SUPPORTED");
+    expect(rows[0]?.explanation.hint).toBeTruthy();
+  });
+
+  it("derives type-not-found when the provider lists no such type", () => {
+    const rows = classifyVerifyResourcePairs({
+      pairs: [
+        {
+          pair: resourcePair({
+            resourceType: "azurerm_kubernetes_cluster",
+            armType: "Microsoft.ContainerService/managedClusters",
+            resourceName: "aks",
+          }),
+          location: loc("westeurope"),
+        },
+      ],
+      providers: PROVIDERS,
+    });
+    expect(rows[0]?.checks.verdict).toBe("RESOURCE_NOT_SUPPORTED");
+    expect(rows[0]?.checks.notSupportedCause).toBe("type-not-found");
+  });
+
+  it("denies policy-blocked regions for generic pairs too", () => {
+    const policy = {
+      summary: { checked: true, restricted: true, allowedLocations: ["westeurope"], assignments: [], error: null },
+      isAllowed: (region: string) => region === "westeurope",
+      reason: (region: string) => (region === "westeurope" ? null : "policy says no"),
+    };
+    const rows = classifyVerifyResourcePairs({
+      pairs: [
+        {
+          pair: resourcePair({ resourceName: "stg", locationLiteral: "francecentral" }),
+          location: loc("francecentral"),
+        },
+      ],
+      // Even an empty catalog must not matter: policy runs first.
+      providers: [],
+      policy,
+    });
+    expect(rows[0]?.checks.verdict).toBe("POLICY_DENIED");
+    expect(rows[0]?.checks.policyReason).toBe("policy says no");
+  });
+
+  it("shares one classification per type across pairs in source order", () => {
+    const rows = classifyVerifyResourcePairs({
+      pairs: [
+        { pair: resourcePair({ resourceName: "stg1" }), location: loc("westeurope") },
+        { pair: resourcePair({ resourceName: "stg2", line: 12 }), location: loc("westeurope") },
+        {
+          pair: resourcePair({ resourceName: "stg3", line: 15, locationLiteral: "francecentral" }),
+          location: loc("francecentral"),
+        },
+      ],
+      providers: PROVIDERS,
+    });
+    expect(rows.map((r) => r.resourceName)).toEqual(["stg1", "stg2", "stg3"]);
+    expect(rows[2]?.checks.verdict).toBe("RESOURCE_NOT_SUPPORTED");
+  });
+});
+
+describe("toVerifyResourceRow", () => {
+  it("carries source metadata, the full resource row, and an availability explanation", () => {
+    const p = resourcePair({ resourceName: "stg", line: 14 });
+    const rows = classifyVerifyResourcePairs({
+      pairs: [{ pair: p, location: loc("westeurope") }],
+      providers: PROVIDERS,
+    });
+    const row = toVerifyResourceRow(p, rows[0]!.checks);
+    expect(row).toMatchObject({
+      file: "main.tf",
+      line: 14,
+      resourceType: "Microsoft.Storage/storageAccounts",
+      sourceType: "azurerm_storage_account",
+      resourceName: "stg",
+      region: "westeurope",
+    });
+    expect(row.explanation.code).toBe("RESOURCE_SUPPORTED");
+    // Availability explanations always say they are not deployability claims.
+    expect(row.explanation.reason).toContain("not deployability");
+  });
+});
+
+describe("generic resource summary helpers", () => {
+  it("counts resource verdicts across rows", () => {
+    const rows = [
+      toVerifyResourceRow(resourcePair(), { ...resourceRow(), verdict: "RESOURCE_SUPPORTED" }),
+      toVerifyResourceRow(resourcePair({ resourceName: "a", line: 2 }), {
+        ...resourceRow(),
+        verdict: "RESOURCE_NOT_SUPPORTED",
+      }),
+    ];
+    const counts = countResourceVerdicts(rows);
+    expect(counts.RESOURCE_SUPPORTED).toBe(1);
+    expect(counts.RESOURCE_NOT_SUPPORTED).toBe(1);
+    expect(counts.POLICY_DENIED).toBe(0);
+  });
+
+  it("summarizes resource blockers and stays null when everything is supported", () => {
+    expect(
+      verifyResourceBlockerSummary({ RESOURCE_SUPPORTED: 0, RESOURCE_NOT_SUPPORTED: 2, POLICY_DENIED: 1 }),
+    ).toBe("Blocked: 1 policy-denied, 2 not advertised.");
+    expect(
+      verifyResourceBlockerSummary({ RESOURCE_SUPPORTED: 3, RESOURCE_NOT_SUPPORTED: 0, POLICY_DENIED: 0 }),
+    ).toBeNull();
+  });
+
+  it("builds the human resource table with the alias and confidence", () => {
+    const rows = [
+      toVerifyResourceRow(resourcePair(), { ...resourceRow(), verdict: "RESOURCE_SUPPORTED" }),
+    ];
+    const { headers, body } = buildVerifyResourceTable(rows);
+    expect(headers).toEqual(["RESOURCE", "TYPE", "REGION", "VERDICT", "CONFIDENCE"]);
+    expect(body[0]?.[0]).toBe("stg");
+    expect(body[0]?.[1]).toBe("storage-account");
+    expect(body[0]?.[2]).toBe("westeurope");
+    expect(body[0]?.[3]).toContain("SUPPORTED");
+    expect(body[0]?.[4]).toBe("availability");
+  });
+});
+
 function baseRow() {
   return {
     region: "westeurope",
@@ -275,6 +477,25 @@ function baseRow() {
     skuRestrictions: null,
     familySizesOffered: null,
     errorDetail: null,
+  };
+}
+
+function resourceRow() {
+  return {
+    kind: "resource" as const,
+    target: "Microsoft.Storage/storageAccounts",
+    resourceType: "Microsoft.Storage/storageAccounts",
+    region: "westeurope",
+    displayName: "West Europe",
+    geographyGroup: "Europe",
+    physicalLocation: "Netherlands",
+    policyAllowed: null,
+    policyReason: null,
+    confidence: "availability" as const,
+    verdict: "RESOURCE_SUPPORTED" as const,
+    providerRegistered: true,
+    typeLocationCount: 42,
+    notSupportedCause: null,
   };
 }
 

@@ -1,10 +1,15 @@
 import { armList, getToken } from "./arm.js";
 import { compareColumnLabel } from "./compare.js";
 import { c, colorEnabled } from "./color.js";
-import { explainVmVerdict, type VerdictExplanation } from "./explain.js";
-import type { IacSkippedResource, IacVmPair } from "./iac.js";
+import { explainResourceVerdict, explainVmVerdict, type VerdictExplanation } from "./explain.js";
+import type { IacResourcePair, IacSkippedResource, IacVmPair } from "./iac.js";
 import type { PolicyCheck } from "./policy.js";
 import { Progress } from "./progress.js";
+import {
+  classifyResourceType,
+  listProviderCatalog,
+  resourceAlias,
+} from "./resources.js";
 import {
   baseVerdict,
   buildBlockedForSubVerdict,
@@ -14,17 +19,28 @@ import {
   buildQuotaVerdict,
 } from "./scan.js";
 import { isSkuBlockedForSubscription, skuVcpus } from "./sku.js";
-import type { AzLocation, AzVmSku, AzVmUsage, RegionVerdict } from "./types.js";
+import type {
+  AzLocation,
+  AzProvider,
+  AzVmSku,
+  AzVmUsage,
+  RegionVerdict,
+  ResourceAvailabilityVerdict,
+} from "./types.js";
 
 /**
  * IaC preflight engine for `azw verify`: take the statically-known
  * `location + sku` pairs parsed from Terraform/Bicep files (see iac.ts) and
  * run each one through the same deployability evidence chain as
  * `azw check vm` — policy → offered → subscription restriction → quota.
+ * Generic `type + location` pairs (since 0.4.8) run through the same
+ * provider-catalog availability engine as `azw check resource`, with
+ * availability confidence — never deployability.
  *
- * Cost mirrors `compare vm`: pairs are grouped by region, so a run makes one
- * cached SKU-catalog call per region plus one live usage call per region
+ * Cost mirrors `compare vm`: VM pairs are grouped by region, so a run makes
+ * one cached SKU-catalog call per region plus one live usage call per region
  * that offers at least one requested SKU — O(regions), never O(pairs).
+ * Generic pairs share one cached provider-catalog call for the whole run.
  */
 
 /** A parsed pair bound to the ARM location its literal resolved to. */
@@ -72,11 +88,20 @@ export function pairKey(pair: IacVmPair): string {
  * Bind each parsed location literal to an ARM location: exact name first
  * (`westeurope`), then display name ignoring case/spaces/punctuation
  * (`West Europe`). Literals that match neither become `unknown-region` skips.
+ * Works for both VM pairs and generic resource pairs — they share the
+ * location metadata the matcher needs.
  */
-export function matchVerifyLocations(
-  pairs: IacVmPair[],
+export function matchVerifyLocations<T extends {
+  file: string;
+  line: number;
+  format: IacVmPair["format"];
+  resourceType: string;
+  resourceName: string;
+  locationLiteral: string;
+}>(
+  pairs: T[],
   locations: AzLocation[],
-): { matched: VerifyPair[]; unmatched: IacSkippedResource[] } {
+): { matched: Array<{ pair: T; location: AzLocation }>; unmatched: IacSkippedResource[] } {
   const byName = new Map<string, AzLocation>();
   const byDisplay = new Map<string, AzLocation>();
   for (const l of locations) {
@@ -85,7 +110,7 @@ export function matchVerifyLocations(
     if (!byDisplay.has(key)) byDisplay.set(key, l);
   }
 
-  const matched: VerifyPair[] = [];
+  const matched: Array<{ pair: T; location: AzLocation }> = [];
   const unmatched: IacSkippedResource[] = [];
   for (const pair of pairs) {
     const literal = pair.locationLiteral.trim();
@@ -301,6 +326,103 @@ function regionStatus(verdicts: Map<string, RegionVerdict>): "ok" | "sub" | "off
   return "ok";
 }
 
+/* ── Generic resource pairs (since 0.4.8) ──────────────────────────────── */
+
+/** A parsed generic resource pair bound to its resolved ARM location. */
+export interface VerifyResourcePair {
+  pair: IacResourcePair;
+  location: AzLocation;
+}
+
+/** One checked generic resource pair: source, the availability row, and why. */
+export interface VerifyResourceResultRow {
+  file: string;
+  line: number;
+  format: IacResourcePair["format"];
+  /** The Azure resource type the pair was checked against. */
+  resourceType: string;
+  /** The resource type as written in the file. */
+  sourceType: string;
+  resourceName: string;
+  region: string;
+  /** The pinned resource verdict row, identical in shape to `azw check resource`. */
+  checks: ResourceAvailabilityVerdict;
+  explanation: VerdictExplanation;
+}
+
+export function toVerifyResourceRow(
+  pair: IacResourcePair,
+  verdict: ResourceAvailabilityVerdict,
+): VerifyResourceResultRow {
+  return {
+    file: pair.file,
+    line: pair.line,
+    format: pair.format,
+    resourceType: pair.armType,
+    sourceType: pair.resourceType,
+    resourceName: pair.resourceName,
+    region: verdict.region,
+    checks: verdict,
+    explanation: explainResourceVerdict(verdict),
+  };
+}
+
+/**
+ * Classify generic pairs against an already-fetched provider catalog.
+ * Pure — no ARM calls — so tests feed fake catalogs directly. Verdicts and
+ * evidence match `azw check resource` exactly; pairs of the same type share
+ * one provider lookup.
+ */
+export function classifyVerifyResourcePairs(input: {
+  pairs: VerifyResourcePair[];
+  providers: AzProvider[];
+  policy?: PolicyCheck;
+}): VerifyResourceResultRow[] {
+  const byType = new Map<string, VerifyResourcePair[]>();
+  for (const entry of input.pairs) {
+    const group = byType.get(entry.pair.armType) ?? [];
+    group.push(entry);
+    byType.set(entry.pair.armType, group);
+  }
+
+  const out: VerifyResourceResultRow[] = [];
+  for (const [armType, group] of byType) {
+    const classified = classifyResourceType({
+      target: armType,
+      locations: group.map((e) => e.location),
+      providers: input.providers,
+      policy: input.policy,
+    });
+    // Mapped targets are always syntactically valid resource types, so this
+    // cannot happen with parser-produced pairs; drop defensively rather than
+    // invent a verdict the vocabulary has no row for.
+    if (!classified) continue;
+    group.forEach((entry, i) => out.push(toVerifyResourceRow(entry.pair, classified.rows[i]!)));
+  }
+  return out;
+}
+
+/**
+ * Fetch the provider catalog once and classify every generic pair against
+ * it — one cached ARM call per run (plus one live call with --refresh),
+ * independent of how many pairs or types the files contain.
+ */
+export async function scanVerifyResourcePairs(opts: {
+  pairs: VerifyResourcePair[];
+  refresh?: boolean;
+  policy?: PolicyCheck;
+}): Promise<{ rows: VerifyResourceResultRow[]; elapsedMs: number }> {
+  const started = Date.now();
+  if (opts.pairs.length === 0) return { rows: [], elapsedMs: 0 };
+  const providers = await listProviderCatalog(Boolean(opts.refresh));
+  const rows = classifyVerifyResourcePairs({
+    pairs: opts.pairs,
+    providers,
+    policy: opts.policy,
+  });
+  return { rows, elapsedMs: Date.now() - started };
+}
+
 /* ── Human output helpers ──────────────────────────────────────────────── */
 
 export function countVerdicts(
@@ -329,6 +451,29 @@ const BLOCKER_LABELS: Array<[RegionVerdict["verdict"], string]> = [
 /** `Blocked: 1 quota-full, 2 not offered.` — null when nothing is blocked. */
 export function verifyBlockerSummary(counts: Record<RegionVerdict["verdict"], number>): string | null {
   const parts = BLOCKER_LABELS.filter(([verdict]) => counts[verdict] > 0).map(
+    ([verdict, label]) => `${counts[verdict]} ${label}`,
+  );
+  return parts.length > 0 ? `Blocked: ${parts.join(", ")}.` : null;
+}
+
+export function countResourceVerdicts(
+  rows: VerifyResourceResultRow[],
+): Record<ResourceAvailabilityVerdict["verdict"], number> {
+  const counts = { RESOURCE_SUPPORTED: 0, RESOURCE_NOT_SUPPORTED: 0, POLICY_DENIED: 0 };
+  for (const row of rows) counts[row.checks.verdict]++;
+  return counts;
+}
+
+const RESOURCE_BLOCKER_LABELS: Array<[ResourceAvailabilityVerdict["verdict"], string]> = [
+  ["POLICY_DENIED", "policy-denied"],
+  ["RESOURCE_NOT_SUPPORTED", "not advertised"],
+];
+
+/** `Blocked: 1 policy-denied, 2 not advertised.` — null when nothing is blocked. */
+export function verifyResourceBlockerSummary(
+  counts: Record<ResourceAvailabilityVerdict["verdict"], number>,
+): string | null {
+  const parts = RESOURCE_BLOCKER_LABELS.filter(([verdict]) => counts[verdict] > 0).map(
     ([verdict, label]) => `${counts[verdict]} ${label}`,
   );
   return parts.length > 0 ? `Blocked: ${parts.join(", ")}.` : null;
@@ -381,6 +526,34 @@ export function buildVerifyTable(rows: VerifyResultRow[]): {
     r.region,
     verifyVerdictCell(r.checks.verdict),
     verifyQuotaCell(r.checks),
+  ]);
+  return { headers, body };
+}
+
+const VERIFY_RESOURCE_VERDICT_LABEL: Record<ResourceAvailabilityVerdict["verdict"], string> = {
+  RESOURCE_SUPPORTED: "✓ SUPPORTED",
+  RESOURCE_NOT_SUPPORTED: "✗ NOT ADVERTISED",
+  POLICY_DENIED: "✗ POLICY DENIED",
+};
+
+function verifyResourceVerdictCell(v: ResourceAvailabilityVerdict["verdict"]): string {
+  const label = VERIFY_RESOURCE_VERDICT_LABEL[v];
+  if (!colorEnabled()) return label;
+  return v === "RESOURCE_SUPPORTED" ? c.green(c.bold(label)) : c.red(label);
+}
+
+/** Human table for generic resource pairs: one row per pair, in source order. */
+export function buildVerifyResourceTable(rows: VerifyResourceResultRow[]): {
+  headers: string[];
+  body: string[][];
+} {
+  const headers = ["RESOURCE", "TYPE", "REGION", "VERDICT", "CONFIDENCE"];
+  const body = rows.map((r) => [
+    r.resourceName,
+    resourceAlias(r.resourceType) ?? r.resourceType,
+    r.region,
+    verifyResourceVerdictCell(r.checks.verdict),
+    r.checks.confidence,
   ]);
   return { headers, body };
 }

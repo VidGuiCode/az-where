@@ -16,7 +16,12 @@ import type { PolicySummary } from "./policy.js";
 import type { ResolvedResourceType } from "./resources.js";
 import type { Suggestion } from "./suggest.js";
 import type { RegionVerdict, ResourceAvailabilityVerdict } from "./types.js";
-import { countVerdicts, type VerifyResultRow } from "./verify.js";
+import {
+  countResourceVerdicts,
+  countVerdicts,
+  type VerifyResourceResultRow,
+  type VerifyResultRow,
+} from "./verify.js";
 
 export interface CheckVmPayload {
   schemaVersion: 1;
@@ -272,10 +277,30 @@ export function buildSuggestPayload(input: {
   };
 }
 
+/**
+ * Generic resource findings of a verify run, kept in their own namespace so
+ * the VM `summary` / `results` / `skipped` fields keep their pinned meaning.
+ * Every row carries `availability` confidence — never deployability.
+ * Since 0.4.8.
+ */
+export interface VerifyResourceSection {
+  /** Generic resources (mapped types) the parser saw across all files. */
+  seen: number;
+  /** Pairs that resolved statically and were checked. */
+  checked: number;
+  /** Resources reported in this section's `skipped`. */
+  skipped: number;
+  supportedCount: number;
+  verdictCounts: Record<ResourceAvailabilityVerdict["verdict"], number>;
+  results: VerifyResourceResultRow[];
+  skippedFindings: IacSkippedResource[];
+}
+
 export interface VerifyPayload {
   schemaVersion: 1;
   kind: "verify";
   resourceKind: "vm";
+  /** Describes `results` (VM rows); generic rows carry availability on each row. */
   confidence: "deployability";
   files: string[];
   formats: IacFormat[];
@@ -295,6 +320,8 @@ export interface VerifyPayload {
   results: VerifyResultRow[];
   /** VM resources found but not checkable; findings, not verdicts. */
   skipped: IacSkippedResource[];
+  /** Generic resource findings. Since 0.4.8. */
+  genericResources: VerifyResourceSection;
   cache: CacheSummary;
   policy: PolicySummary;
 }
@@ -307,10 +334,16 @@ export function buildVerifyPayload(input: {
   rows: VerifyResultRow[];
   skipped: IacSkippedResource[];
   vmResourceCount: number;
+  resourceRows?: VerifyResourceResultRow[];
+  resourceSkipped?: IacSkippedResource[];
+  genericResourceCount?: number;
   cache: CacheSummary;
   policy: PolicySummary;
 }): VerifyPayload {
   const verdictCounts = countVerdicts(input.rows);
+  const resourceRows = input.resourceRows ?? [];
+  const resourceSkipped = input.resourceSkipped ?? [];
+  const resourceCounts = countResourceVerdicts(resourceRows);
   return {
     schemaVersion: 1,
     kind: "verify",
@@ -329,6 +362,15 @@ export function buildVerifyPayload(input: {
     },
     results: input.rows,
     skipped: input.skipped,
+    genericResources: {
+      seen: input.genericResourceCount ?? 0,
+      checked: resourceRows.length,
+      skipped: resourceSkipped.length,
+      supportedCount: resourceCounts.RESOURCE_SUPPORTED,
+      verdictCounts: resourceCounts,
+      results: resourceRows,
+      skippedFindings: resourceSkipped,
+    },
     cache: input.cache,
     policy: input.policy,
   };

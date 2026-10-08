@@ -401,6 +401,76 @@ describe.runIf(LIVE)("live verify", () => {
     }
   });
 
+  it("verify checks generic resource pairs with availability confidence (0.4.8)", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "azw-verify-"));
+    try {
+      const tfFile = path.join(dir, "main.tf");
+      writeFileSync(
+        tfFile,
+        [
+          'resource "azurerm_storage_account" "stg" {',
+          '  name     = "stg"',
+          '  location = "westeurope"',
+          "}",
+          "",
+          'resource "azurerm_key_vault" "kv" {',
+          '  name     = "kv"',
+          "  location = var.location",
+          "}",
+          "",
+        ].join("\n"),
+      );
+
+      const res = runJson(["verify", tfFile, "-o", "json"]);
+      // Exit 0 (storage advertised) or 1 (not advertised / policy-denied)
+      // are both valid outcomes; anything else means auth/usage failure.
+      expect([0, 1]).toContain(res.status);
+
+      const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+      expect(payload.kind).toBe("verify");
+      // VM summary stays VM-only; generic findings live in their own section.
+      expect(payload.summary).toMatchObject({ resources: 0, checked: 0, skipped: 0 });
+
+      const section = payload.genericResources as Record<string, unknown>;
+      expect(Object.keys(section)).toEqual([
+        "seen",
+        "checked",
+        "skipped",
+        "supportedCount",
+        "verdictCounts",
+        "results",
+        "skippedFindings",
+      ]);
+      expect(section.seen).toBe(2);
+      expect(section.checked).toBe(1);
+      expect(section.skipped).toBe(1);
+
+      const rows = section.results as Array<Record<string, unknown>>;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        resourceType: "Microsoft.Storage/storageAccounts",
+        sourceType: "azurerm_storage_account",
+        resourceName: "stg",
+        region: "westeurope",
+      });
+      expect(RESOURCE_VERDICTS.has(String(rows[0]!.checks?.verdict))).toBe(true);
+      expect(rows[0]!.checks?.confidence).toBe("availability");
+      expect(rows[0]!.explanation?.code).toBe((rows[0]!.checks as Record<string, unknown>).verdict);
+
+      const findings = section.skippedFindings as Array<Record<string, unknown>>;
+      expect(findings[0]).toMatchObject({
+        resourceName: "kv",
+        reason: "dynamic-location",
+        detail: "var.location",
+      });
+
+      // Exit 1 iff the checked pair is blocked (not supported or denied).
+      expect(res.status).toBe((section.supportedCount as number) === 0 ? 1 : 0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("verify human table prints verdicts, reasons, and the skip summary", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "azw-verify-"));
     try {

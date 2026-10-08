@@ -8,7 +8,7 @@ import {
   buildSuggestPayload,
   buildVerifyPayload,
 } from "../../src/core/payloads.js";
-import type { IacSkippedResource } from "../../src/core/iac.js";
+import type { IacResourcePair, IacSkippedResource } from "../../src/core/iac.js";
 import { POLICY_DISABLED } from "../../src/core/policy.js";
 import { classifyResourceLocation, resolveResourceType } from "../../src/core/resources.js";
 import {
@@ -16,7 +16,12 @@ import {
   buildQuotaVerdict,
 } from "../../src/core/scan.js";
 import type { AzLocation, RegionVerdict, ResourceAvailabilityVerdict } from "../../src/core/types.js";
-import { toVerifyRow, type VerifyResultRow } from "../../src/core/verify.js";
+import {
+  toVerifyResourceRow,
+  toVerifyRow,
+  type VerifyResourceResultRow,
+  type VerifyResultRow,
+} from "../../src/core/verify.js";
 
 /**
  * These tests pin the documented stable JSON contracts (docs/json-contracts.md):
@@ -337,6 +342,21 @@ describe("verify payload contracts", () => {
     detail: "azurerm_resource_group.rg.location",
   };
 
+  const iacResourcePair: IacResourcePair = {
+    file: "main.tf",
+    line: 48,
+    format: "terraform",
+    resourceType: "azurerm_storage_account",
+    armType: "Microsoft.Storage/storageAccounts",
+    resourceName: "stg",
+    locationLiteral: "westeurope",
+  };
+
+  const verifyResourceRow: VerifyResourceResultRow = toVerifyResourceRow(
+    iacResourcePair,
+    resourceRow,
+  );
+
   it("verify pins the documented top-level fields in order", () => {
     const payload = buildVerifyPayload({
       files: ["main.tf"],
@@ -361,6 +381,7 @@ describe("verify payload contracts", () => {
       "summary",
       "results",
       "skipped",
+      "genericResources",
       "cache",
       "policy",
     ]);
@@ -450,6 +471,103 @@ describe("verify payload contracts", () => {
       "resourceName",
       "reason",
       "detail",
+    ]);
+  });
+
+  it("verify genericResources pins the additive section shape (since 0.4.8)", () => {
+    const empty = buildVerifyPayload({
+      files: ["main.tf"],
+      formats: ["terraform"],
+      scannedAt: "2026-10-08T00:00:00.000Z",
+      elapsedMs: 1200,
+      rows: [],
+      skipped: [],
+      vmResourceCount: 0,
+      cache,
+      policy: POLICY_DISABLED,
+    });
+    // Present with zeros even when a run had no generic resources.
+    expect(Object.keys(empty.genericResources)).toEqual([
+      "seen",
+      "checked",
+      "skipped",
+      "supportedCount",
+      "verdictCounts",
+      "results",
+      "skippedFindings",
+    ]);
+    expect(empty.genericResources.seen).toBe(0);
+    expect(empty.genericResources.results).toEqual([]);
+    expect(empty.genericResources.skippedFindings).toEqual([]);
+
+    const payload = buildVerifyPayload({
+      files: ["main.tf"],
+      formats: ["terraform"],
+      scannedAt: "2026-10-08T00:00:00.000Z",
+      elapsedMs: 1200,
+      rows: [],
+      skipped: [],
+      vmResourceCount: 0,
+      resourceRows: [verifyResourceRow],
+      resourceSkipped: [skippedFinding],
+      genericResourceCount: 2,
+      cache,
+      policy: POLICY_DISABLED,
+    });
+    expect(payload.genericResources).toEqual({
+      seen: 2,
+      checked: 1,
+      skipped: 1,
+      supportedCount: 1,
+      verdictCounts: { RESOURCE_SUPPORTED: 1, RESOURCE_NOT_SUPPORTED: 0, POLICY_DENIED: 0 },
+      results: [verifyResourceRow],
+      skippedFindings: [skippedFinding],
+    });
+    expect(payload.genericResources.results[0]!.checks.confidence).toBe("availability");
+  });
+
+  it("verify genericResources results carry source metadata and the pinned resource row", () => {
+    const payload = buildVerifyPayload({
+      files: ["main.tf"],
+      formats: ["terraform"],
+      scannedAt: "2026-10-08T00:00:00.000Z",
+      elapsedMs: 1200,
+      rows: [],
+      skipped: [],
+      vmResourceCount: 0,
+      resourceRows: [verifyResourceRow],
+      resourceSkipped: [],
+      genericResourceCount: 1,
+      cache,
+      policy: POLICY_DISABLED,
+    });
+    expect(Object.keys(payload.genericResources.results[0]!)).toEqual([
+      "file",
+      "line",
+      "format",
+      "resourceType",
+      "sourceType",
+      "resourceName",
+      "region",
+      "checks",
+      "explanation",
+    ]);
+    // The embedded row keeps the pinned ResourceAvailabilityVerdict field order.
+    expect(Object.keys(payload.genericResources.results[0]!.checks)).toEqual([
+      "kind",
+      "target",
+      "resourceType",
+      "region",
+      "displayName",
+      "geographyGroup",
+      "physicalLocation",
+      "policyAllowed",
+      "policyReason",
+      "confidence",
+      "verdict",
+      "providerRegistered",
+      "typeLocationCount",
+      "notSupportedCause",
     ]);
   });
 });

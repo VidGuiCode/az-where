@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -216,6 +217,31 @@ describe("CLI smoke tests", () => {
     const tfJson = runFail(["verify", "main.tf.json"]);
     expect(tfJson.status).toBe(3);
     expect(tfJson.stderr).toContain("JSON-syntax Terraform");
+  });
+
+  it("verify names the generic resource types it understands when nothing is checkable", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "azw-smoke-"));
+    try {
+      const tfFile = path.join(dir, "unsupported.tf");
+      writeFileSync(
+        tfFile,
+        [
+          'resource "azurerm_resource_group" "rg" {',
+          '  name     = "rg"',
+          '  location = "westeurope"',
+          "}",
+          "",
+        ].join("\n"),
+      );
+      const res = runFail(["verify", tfFile]);
+      expect(res.status).toBe(3);
+      expect(res.stderr).toContain("No checkable resources found");
+      // The hint lists both VM types and the generic types added in 0.4.8.
+      expect(res.stderr).toContain("azurerm_storage_account");
+      expect(res.stderr).toContain("azurerm_kubernetes_cluster");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("available command exists and has deployability filters", () => {

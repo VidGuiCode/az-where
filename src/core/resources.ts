@@ -58,6 +58,46 @@ export interface ResourceClassificationContext {
   typeLocationCount: number | null;
 }
 
+/** Fetch the full ARM provider catalog (cached, refreshable). */
+export async function listProviderCatalog(refresh = false): Promise<AzProvider[]> {
+  return armList<AzProvider>("/providers?api-version=2021-04-01", { refresh });
+}
+
+/**
+ * Classify one resource type across the given locations against an
+ * already-fetched provider catalog. Pure — no ARM calls — so callers that
+ * batch many targets (e.g. `verify`) fetch the catalog once and share it
+ * across types.
+ */
+export function classifyResourceType(input: {
+  target: string;
+  locations: AzLocation[];
+  providers: AzProvider[];
+  policy?: PolicyCheck;
+}): { resolved: ResolvedResourceType; rows: ResourceAvailabilityVerdict[] } | null {
+  const resolved = resolveResourceType(input.target);
+  if (!resolved) return null;
+  const provider =
+    input.providers.find(
+      (p) => p.namespace.toLowerCase() === resolved.namespace.toLowerCase(),
+    ) ?? null;
+  const resource = findProviderResource(provider, resolved.typePath);
+  const supported = new Set((resource?.locations ?? []).map(normalizeLocationLabel));
+  const context = buildClassificationContext(provider, resource);
+
+  const rows = input.locations.map((location) =>
+    classifyResourceLocation({
+      target: input.target,
+      resolved,
+      location,
+      supported,
+      context,
+      policy: input.policy,
+    }),
+  );
+  return { resolved, rows };
+}
+
 export async function scanResourceAvailability(opts: {
   target: string;
   locations: AzLocation[];
@@ -65,8 +105,14 @@ export async function scanResourceAvailability(opts: {
   policy?: PolicyCheck;
 }): Promise<ResourceAvailabilityResult> {
   const started = Date.now();
-  const resolved = resolveResourceType(opts.target);
-  if (!resolved) {
+  const providers = await listProviderCatalog(Boolean(opts.refresh));
+  const classified = classifyResourceType({
+    target: opts.target,
+    locations: opts.locations,
+    providers,
+    policy: opts.policy,
+  });
+  if (!classified) {
     return {
       resolved: {
         input: opts.target,
@@ -79,24 +125,11 @@ export async function scanResourceAvailability(opts: {
       elapsedMs: Date.now() - started,
     };
   }
-
-  const provider = await getProvider(resolved.namespace, Boolean(opts.refresh));
-  const resource = findProviderResource(provider, resolved.typePath);
-  const supported = new Set((resource?.locations ?? []).map(normalizeLocationLabel));
-  const context = buildClassificationContext(provider, resource);
-
-  const rows = opts.locations.map((location) =>
-    classifyResourceLocation({
-      target: opts.target,
-      resolved,
-      location,
-      supported,
-      context,
-      policy: opts.policy,
-    }),
-  );
-
-  return { resolved, rows: sortResourceVerdicts(rows), elapsedMs: Date.now() - started };
+  return {
+    resolved: classified.resolved,
+    rows: sortResourceVerdicts(classified.rows),
+    elapsedMs: Date.now() - started,
+  };
 }
 
 /** Derive the shared classification facts from the provider-catalog lookup. */
@@ -204,9 +237,9 @@ export function sortResourceVerdicts(
   });
 }
 
-async function getProvider(namespace: string, refresh: boolean): Promise<AzProvider | null> {
-  const providers = await armList<AzProvider>("/providers?api-version=2021-04-01", { refresh });
-  return providers.find((p) => p.namespace.toLowerCase() === namespace.toLowerCase()) ?? null;
+/** Friendly alias for a full Azure resource type, if one exists. */
+export function resourceAlias(resourceType: string): string | null {
+  return TYPE_TO_ALIAS[resourceType.toLowerCase()] ?? null;
 }
 
 function findProviderResource(

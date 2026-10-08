@@ -102,7 +102,7 @@ Reason: Standard_B1s needs 2 vCPUs but family standardBSFamily has only 0/4 free
   Hint: Request a quota increase (Azure Portal → Quotas) or free up vCPUs, then re-check.
 ```
 
-`verify` runs those same checks over your infrastructure code before you deploy it:
+`verify` runs those same checks over your infrastructure code before you deploy it, and also checks common generic resources (storage accounts, key vaults, web/function apps, service plans, AKS, PostgreSQL flexible servers) against the regions your files name — availability confidence, never a deployability claim:
 
 ```text
 RESOURCE   SKU    REGION       VERDICT          QUOTA
@@ -113,6 +113,12 @@ vm_win     D2s_v5 westeurope   ✗ QUOTA FULL     0/10 free
 Reason: vm_win @ main.tf:32 — Standard_D2s_v5 needs 4 vCPUs but family standardDDSv5Family has only 0/10 free in westeurope — 4 vCPUs short.
   Hint: Request a quota increase (Azure Portal → Quotas) or free up vCPUs, then re-check.
 1 of 2 checked VM resources cannot deploy as written.
+
+Generic resources (availability, not deployability):
+RESOURCE   TYPE             REGION       VERDICT         CONFIDENCE
+--------   ----             ----------   --------------  ------------
+stg        storage-account  westeurope   ✓ SUPPORTED     availability
+
 Skipped 1 resource — not statically checkable:
   vmss @ main.tf:48 — var.location (dynamic-location)
 ```
@@ -134,8 +140,8 @@ azw check resource <alias-or-type> --region <name>
                          # one-region generic resource availability verdict
 azw compare vm <sku-list>
                          # region × size deployability matrix (e.g. B1s,B2s,D2s_v5)
-azw verify <files...>    # preflight .tf/.bicep files: check VM size+region
-                         # pairs before terraform apply / az deployment
+azw verify <files...>    # preflight .tf/.bicep files: check VM size pairs and
+                         # generic resource regions before terraform apply / az deployment
 azw pick vm <sku>        # one deployable region name for scripts
 azw suggest vm <sku>     # recommended region with a short explanation
 azw regions <sku>        # compatibility shortcut for VM availability
@@ -224,7 +230,7 @@ azw compare vm B1s,B2s,D2s_v5 --eu -o json
 azw verify main.tf -o json
 ```
 
-`verify` exits `1` when a checked pair is blocked, so it can gate a CI step before `terraform apply`; resources with dynamic values are reported as skipped and never fail the run.`
+`verify` exits `1` when a checked pair is blocked — a VM pair that cannot deploy, or a generic resource that is not advertised (or policy-denied) in the region its file names — so it can gate a CI step before `terraform apply`; resources with dynamic values are reported as skipped and never fail the run.`
 
 `compare vm` emits a stable matrix contract for choosing fallback sizes: a top-level `regions` axis plus one result per requested SKU with `deployableRegions`, `deployableCount`, and `verdictCounts`, so scripts can walk the SKU order and pick the first that deploys in a target region.
 
