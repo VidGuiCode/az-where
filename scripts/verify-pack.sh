@@ -18,6 +18,9 @@ trap 'rm -rf "$TMPDIR" "$PROJECT_DIR/$TARBALL"' EXIT
 echo ""
 echo "=== Installing into temp directory ==="
 cd "$TMPDIR"
+# The nested npm must not inherit the parent lifecycle's allow-scripts config:
+# npm 11 rejects --allow-scripts in project-scoped installs (EALLOWSCRIPTS).
+unset npm_config_allow_scripts
 npm init -y > /dev/null 2>&1
 npm install "$PROJECT_DIR/$TARBALL" > /dev/null 2>&1
 echo "  Installed successfully"

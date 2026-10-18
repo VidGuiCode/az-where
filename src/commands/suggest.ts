@@ -1,5 +1,12 @@
 import { Command } from "commander";
 import { armCacheSummary } from "../core/cache.js";
+import {
+  allSupportedRegionRows,
+  closestMissSummary,
+  compareResourceColumnLabel,
+  parseResourceTargetList,
+  scanCompareResources,
+} from "../core/compareResource.js";
 import { exitWithError, ValidationError } from "../core/errors.js";
 import { explainVmVerdict } from "../core/explain.js";
 import { filterByGeography, listLocations, resolveGeography } from "../core/geo.js";
@@ -10,17 +17,22 @@ import {
   isJsonOutput,
   resolveOutputMode,
 } from "../core/outputMode.js";
-import { buildSuggestPayload } from "../core/payloads.js";
+import { buildSuggestPayload, buildSuggestResourcePayload } from "../core/payloads.js";
 import { scanRegions, sortVerdicts } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
-import { chooseSuggestion, knownPlaces, resolvePlace } from "../core/suggest.js";
+import { chooseResourceSuggestion, chooseSuggestion, knownPlaces, resolvePlace } from "../core/suggest.js";
 import { loadPolicyCheck } from "../core/policy.js";
 
 export function createSuggestCommand(): Command {
   const cmd = new Command("suggest")
-    .description("Suggest one deployable VM region. Canonical: `azw suggest vm <sku>`.")
-    .argument("[vmOrSku]", "Canonical kind `vm`, or VM SKU shortcut")
-    .argument("[sku]", "VM SKU for canonical syntax (`azw suggest vm B1s`)")
+    .description(
+      "Suggest one region with a reason. Canonical: `azw suggest vm <sku>` / `azw suggest resource <types>`.",
+    )
+    .argument("[kindOrSku]", "Canonical kind `vm` or `resource`, or VM SKU shortcut")
+    .argument(
+      "[target]",
+      "VM SKU for `azw suggest vm B1s`, or resource list for `azw suggest resource storage-account,aks`",
+    )
     .option("--sku <sku>", "VM SKU (alternative to positional)")
     .option("--eu", "EU only")
     .option("--us", "US only")
@@ -30,8 +42,12 @@ export function createSuggestCommand(): Command {
     .option("--concurrency <n>", "Parallel ARM calls (default 16)", "16")
     .option("--no-policy", "Skip Azure Policy allowed-location checks")
     .option("--refresh", "Bypass cached ARM location/SKU data")
-    .action(async (vmOrSku: string | undefined, sku: string | undefined, opts) => {
-      await runSuggestAction(resolveVmTarget(vmOrSku, sku, opts.sku, "suggest"), opts);
+    .action(async (kindOrSku: string | undefined, target: string | undefined, opts) => {
+      if (kindOrSku === "resource") {
+        await runSuggestResourceAction(target, opts);
+        return;
+      }
+      await runSuggestAction(resolveVmTarget(kindOrSku, target, opts.sku, "suggest"), opts);
     });
   addOutputOption(addJsonCompatibilityOptions(cmd, "Machine-readable JSON output"));
   return cmd;
@@ -140,6 +156,130 @@ export async function runSuggestAction(
     }
 
     printInfo(suggestion.row.region);
+    if (mode !== "value") printInfo(suggestion.reason);
+  } catch (err) {
+    exitWithError(err, jsonErrors);
+  }
+}
+
+/**
+ * `azw suggest resource storage-account,key-vault --eu [--near <city>]` —
+ * one human recommendation with a reason. Candidates are the regions where
+ * every requested type is `RESOURCE_SUPPORTED`; scoring is proximity-based
+ * (resource rows carry no quota signal), so `--near` ranks by distance and
+ * otherwise the stable region axis order wins. The reason always states the
+ * availability-not-deployability caveat.
+ */
+export async function runSuggestResourceAction(
+  rawTargets: string | undefined,
+  opts: {
+    eu?: boolean;
+    us?: boolean;
+    asia?: boolean;
+    geography?: string;
+    near?: string;
+    policy?: boolean;
+    refresh?: boolean;
+    sku?: string;
+    json?: boolean;
+    compact?: boolean;
+    output?: string;
+  },
+): Promise<void> {
+  let jsonErrors = Boolean(opts.json);
+  try {
+    const mode = resolveOutputMode(opts, { allowValue: true, command: "suggest resource" });
+    jsonErrors = isJsonOutput(mode);
+    if (opts.sku) {
+      throw new ValidationError("--sku is VM-only and cannot be combined with resource targets.");
+    }
+    const targets = parseResourceTargetList(rawTargets ?? "", "suggest resource");
+
+    const nearInput = opts.near ? String(opts.near) : "";
+    const near = nearInput ? resolvePlace(nearInput) : null;
+    if (nearInput && !near) {
+      throw new ValidationError(
+        `Unknown --near city '${nearInput}'. Known values: ${knownPlaces().join(", ")}`,
+      );
+    }
+
+    const geoInput = opts.eu
+      ? "eu"
+      : opts.us
+        ? "us"
+        : opts.asia
+          ? "asia"
+          : (opts.geography ?? "all");
+    const geo = resolveGeography(geoInput);
+    const all = await listLocations({
+      progressLabel: `Suggesting region for ${targets.length} resource type${
+        targets.length === 1 ? "" : "s"
+      }`,
+      etaSeconds: 5,
+      refresh: Boolean(opts.refresh),
+    });
+    const locations = filterByGeography(all, geo);
+    if (locations.length === 0) {
+      throw new ValidationError(`No regions matched geography '${geoInput}'.`);
+    }
+
+    const policy = await loadPolicyCheck({
+      enabled: opts.policy !== false,
+      required: true,
+    });
+    const { regionRows, targets: summaries, elapsedMs } = await scanCompareResources({
+      targets,
+      locations,
+      refresh: Boolean(opts.refresh),
+      policy: policy.check,
+    });
+
+    const candidates = allSupportedRegionRows(regionRows).map((row) => row.location);
+    const suggestion = chooseResourceSuggestion(candidates, targets.length, near);
+
+    if (!suggestion) {
+      if (isJsonOutput(mode)) {
+        printJson(
+          buildSuggestResourcePayload({
+            targets,
+            resolved: summaries.map((s) => s.resolved),
+            geography: geo ?? "all",
+            near: nearInput || null,
+            elapsedMs,
+            cache: armCacheSummary(),
+            policy: policy.summary,
+            suggestion: null,
+          }),
+        );
+        process.exit(1);
+      }
+      process.stderr.write("No scanned region advertises every requested resource type.\n");
+      const miss = closestMissSummary(summaries);
+      if (miss) {
+        process.stderr.write(
+          `Why: ${compareResourceColumnLabel(miss.target)} is supported in ${miss.supportedCount} of ${regionRows.length} scanned regions.\n`,
+        );
+      }
+      process.exit(1);
+    }
+
+    if (isJsonOutput(mode)) {
+      printJson(
+        buildSuggestResourcePayload({
+          targets,
+          resolved: summaries.map((s) => s.resolved),
+          geography: geo ?? "all",
+          near: nearInput || null,
+          elapsedMs,
+          cache: armCacheSummary(),
+          policy: policy.summary,
+          suggestion,
+        }),
+      );
+      return;
+    }
+
+    printInfo(suggestion.location.name);
     if (mode !== "value") printInfo(suggestion.reason);
   } catch (err) {
     exitWithError(err, jsonErrors);

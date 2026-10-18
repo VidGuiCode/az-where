@@ -15,8 +15,8 @@ import { explainResourceVerdict, explainVmVerdict } from "./explain.js";
 import type { IacFormat, IacSkippedResource } from "./iac.js";
 import type { PolicySummary } from "./policy.js";
 import type { ResolvedResourceType } from "./resources.js";
-import type { Suggestion } from "./suggest.js";
-import type { RegionVerdict, ResourceAvailabilityVerdict } from "./types.js";
+import type { ResourceSuggestion, Suggestion } from "./suggest.js";
+import type { AzLocation, RegionVerdict, ResourceAvailabilityVerdict } from "./types.js";
 import {
   countResourceVerdicts,
   countVerdicts,
@@ -266,6 +266,116 @@ export function buildSuggestPayload(input: {
       ? {
           region: input.suggestion.row.region,
           displayName: input.suggestion.row.displayName,
+          reason: input.suggestion.reason,
+          score: input.suggestion.score,
+          factors: input.suggestion.factors,
+        }
+      : null,
+  };
+}
+
+/**
+ * `azw pick resource` payload: one script-value region where every requested
+ * type is `RESOURCE_SUPPORTED`. Mirrors `pick vm` minus the quota fields —
+ * resource rows carry no `free`/`limit` signal. Since 0.4.10.
+ */
+export interface PickResourcePayload {
+  schemaVersion: 1;
+  kind: "pick";
+  resourceKind: "resource";
+  confidence: "availability";
+  targets: string[];
+  /** One resolved entry per target, in request order. */
+  resolved: ResolvedResourceType[];
+  cache: CacheSummary;
+  policy: PolicySummary;
+  picked: {
+    region: string;
+    displayName: string;
+    geographyGroup: string | null;
+  } | null;
+}
+
+export function buildPickResourcePayload(input: {
+  targets: string[];
+  resolved: ResolvedResourceType[];
+  cache: CacheSummary;
+  policy: PolicySummary;
+  location: AzLocation | null;
+}): PickResourcePayload {
+  return {
+    schemaVersion: 1,
+    kind: "pick",
+    resourceKind: "resource",
+    confidence: "availability",
+    targets: input.targets,
+    resolved: input.resolved,
+    cache: input.cache,
+    policy: input.policy,
+    picked: input.location
+      ? {
+          region: input.location.name,
+          displayName: input.location.displayName,
+          geographyGroup: input.location.metadata?.geographyGroup ?? null,
+        }
+      : null,
+  };
+}
+
+/**
+ * `azw suggest resource` payload: one human recommendation with a reason.
+ * Scoring is proximity-based (`score: -distanceKm` with `--near`, else 0);
+ * `factors` carries `distanceKm` (only with `--near`) and `geographyGroup`
+ * — never `free`/`limit`. Since 0.4.10.
+ */
+export interface SuggestResourcePayload {
+  schemaVersion: 1;
+  kind: "suggest";
+  resourceKind: "resource";
+  confidence: "availability";
+  targets: string[];
+  /** One resolved entry per target, in request order. */
+  resolved: ResolvedResourceType[];
+  geography: string;
+  near: string | null;
+  elapsedMs: number;
+  cache: CacheSummary;
+  policy: PolicySummary;
+  suggested: {
+    region: string;
+    displayName: string;
+    reason: string;
+    score: number;
+    factors: ResourceSuggestion["factors"];
+  } | null;
+}
+
+export function buildSuggestResourcePayload(input: {
+  targets: string[];
+  resolved: ResolvedResourceType[];
+  geography: string;
+  near: string | null;
+  elapsedMs: number;
+  cache: CacheSummary;
+  policy: PolicySummary;
+  suggestion: ResourceSuggestion | null;
+}): SuggestResourcePayload {
+  return {
+    schemaVersion: 1,
+    kind: "suggest",
+    resourceKind: "resource",
+    confidence: "availability",
+    targets: input.targets,
+    resolved: input.resolved,
+    geography: input.geography,
+    near: input.near,
+    elapsedMs: input.elapsedMs,
+    cache: input.cache,
+    policy: input.policy,
+    suggested: input.suggestion
+      ? {
+          region: input.suggestion.location.name,
+          displayName: input.suggestion.location.displayName,
           reason: input.suggestion.reason,
           score: input.suggestion.score,
           factors: input.suggestion.factors,

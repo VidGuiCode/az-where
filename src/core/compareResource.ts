@@ -30,18 +30,19 @@ export const MAX_COMPARE_TARGETS = 30;
  * targets (aliases or raw Azure types). Deduplication is case-insensitive on
  * the resolved resource type, so `storage-account`,
  * `Microsoft.Storage/storageAccounts`, and case variants collapse to the
- * first form given.
+ * first form given. `command` only names the invoking command in the usage
+ * hints (pick/suggest resource share this parser since 0.4.10).
  */
-export function parseResourceTargetList(raw: string): string[] {
+export function parseResourceTargetList(raw: string, command = "compare resource"): string[] {
   const parts = raw.split(",").map((t) => t.trim());
   if (parts.every((p) => p.length === 0)) {
     throw new ValidationError(
-      "Missing resource list. Try: azw compare resource storage-account,key-vault,aks --eu",
+      `Missing resource list. Try: azw ${command} storage-account,key-vault,aks --eu`,
     );
   }
   if (parts.some((p) => p.length === 0)) {
     throw new ValidationError(
-      "Resource list contains an empty entry. Try: azw compare resource storage-account,key-vault,aks --eu",
+      `Resource list contains an empty entry. Try: azw ${command} storage-account,key-vault,aks --eu`,
     );
   }
   const seen = new Set<string>();
@@ -60,7 +61,7 @@ export function parseResourceTargetList(raw: string): string[] {
   }
   if (targets.length > MAX_COMPARE_TARGETS) {
     throw new ValidationError(
-      `compare resource supports up to ${MAX_COMPARE_TARGETS} resource types per invocation (got ${targets.length}).`,
+      `${command} supports up to ${MAX_COMPARE_TARGETS} resource types per invocation (got ${targets.length}).`,
     );
   }
   return targets;
@@ -254,7 +255,28 @@ export function buildCompareResourceTable(
 
 /** Region names where every requested type is supported, in row order. */
 export function allSupportedRegions(rows: CompareResourceRegionRow[]): string[] {
-  return rows
-    .filter((row) => row.cells.every((cell) => cell.verdict === "RESOURCE_SUPPORTED"))
-    .map((row) => row.location.name);
+  return allSupportedRegionRows(rows).map((row) => row.location.name);
+}
+
+/**
+ * Region rows where every requested type is supported, in stable axis order
+ * (geography group then name) — `pick resource` takes the first. The
+ * row-returning counterpart of `allSupportedRegions`. Since 0.4.10.
+ */
+export function allSupportedRegionRows(
+  rows: CompareResourceRegionRow[],
+): CompareResourceRegionRow[] {
+  return rows.filter((row) => row.cells.every((cell) => cell.verdict === "RESOURCE_SUPPORTED"));
+}
+
+/**
+ * The requested target supported in the fewest scanned regions — the closest
+ * miss `pick` / `suggest` resource report when no region advertises every
+ * type. Ties keep request order. Since 0.4.10.
+ */
+export function closestMissSummary(
+  summaries: CompareResourceSummary[],
+): CompareResourceSummary | null {
+  if (summaries.length === 0) return null;
+  return summaries.reduce((worst, s) => (s.supportedCount < worst.supportedCount ? s : worst));
 }

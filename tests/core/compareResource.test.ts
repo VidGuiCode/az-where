@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  allSupportedRegionRows,
   allSupportedRegions,
   buildCompareResourceTable,
   classifyCompareResources,
+  closestMissSummary,
   compareResourceCellLabel,
   compareResourceColumnLabel,
   compareResourceLegendLine,
@@ -81,6 +83,23 @@ describe("parseResourceTargetList", () => {
       (_, i) => `Microsoft.Nonsense/type${i}`,
     ).join(",");
     expect(() => parseResourceTargetList(many)).toThrow(RegExp(`${MAX_COMPARE_TARGETS}`));
+  });
+
+  it("names the invoking command in its usage hints (pick/suggest share it since 0.4.10)", () => {
+    expect(() => parseResourceTargetList("", "pick resource")).toThrow(/azw pick resource/);
+    expect(() => parseResourceTargetList("aks,,web-app", "suggest resource")).toThrow(
+      /azw suggest resource/,
+    );
+    expect(() =>
+      parseResourceTargetList(
+        Array.from({ length: MAX_COMPARE_TARGETS + 1 }, (_, i) => `Microsoft.Nonsense/t${i}`).join(
+          ",",
+        ),
+        "pick resource",
+      ),
+    ).toThrow(/pick resource supports up to/);
+    // Default keeps the compare resource wording.
+    expect(() => parseResourceTargetList("")).toThrow(/azw compare resource/);
   });
 });
 
@@ -205,5 +224,57 @@ describe("table rendering", () => {
     const sorted = sortCompareResourceRowsForTable(rows());
     expect(sorted.map((r) => r.location.name)).toEqual(["westeurope", "northeurope", "eastus"]);
     expect(allSupportedRegions(sorted)).toEqual(["westeurope"]);
+  });
+});
+
+describe("pick/suggest resource helpers (0.4.10)", () => {
+  const locations = [loc("westeurope"), loc("northeurope"), loc("eastus", "US")];
+  const targets = ["storage-account", "key-vault"];
+
+  function scan() {
+    return classifyCompareResources({ targets, locations, providers });
+  }
+
+  it("allSupportedRegionRows keeps stable axis order and returns full rows", () => {
+    // Axis: westeurope only — storage is advertised in westeurope alone, so
+    // it is the single region where every requested type is supported.
+    const rows = scan().regionRows;
+    const supported = allSupportedRegionRows(rows);
+    expect(supported.map((r) => r.location.name)).toEqual(["westeurope"]);
+    expect(supported[0]!.location.displayName).toBe("westeurope");
+    // Names variant stays consistent with the row variant.
+    expect(allSupportedRegions(rows)).toEqual(allSupportedRegionRows(rows).map((r) => r.location.name));
+  });
+
+  it("allSupportedRegionRows is empty when no region advertises every type", () => {
+    const { regionRows } = classifyCompareResources({
+      targets: ["storage-account", "Microsoft.Nonsense/missing"],
+      locations,
+      providers,
+    });
+    expect(allSupportedRegionRows(regionRows)).toEqual([]);
+  });
+
+  it("closestMissSummary reports the target supported in the fewest regions", () => {
+    // storage-account: 1/3 supported; key-vault: 2/3 — storage is the miss.
+    const { summaries } = scan();
+    const miss = closestMissSummary(summaries)!;
+    expect(miss.target).toBe("storage-account");
+    expect(miss.supportedCount).toBe(1);
+    expect(miss.supportedCount).toBeLessThan(
+      summaries.find((s) => s.target === "key-vault")!.supportedCount,
+    );
+  });
+
+  it("closestMissSummary keeps request order on ties and returns null when empty", () => {
+    const { summaries } = classifyCompareResources({
+      targets: ["key-vault", "Microsoft.KeyVault/vaults".toLowerCase()],
+      locations: [loc("westeurope")],
+      providers,
+    });
+    // Both targets resolve to the same support (dedupe happens upstream; the
+    // classifier itself keeps request order) — first wins on ties.
+    expect(closestMissSummary(summaries)!.target).toBe("key-vault");
+    expect(closestMissSummary([])).toBeNull();
   });
 });

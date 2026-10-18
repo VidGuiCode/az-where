@@ -108,6 +108,61 @@ describe("CLI smoke tests", () => {
     expect(output).toContain("--refresh");
   });
 
+  it("pick and suggest teach the resource kind in their argument help (0.4.10)", () => {
+    const pickHelp = run(["pick", "--help"]);
+    expect(pickHelp).toContain("resource");
+    expect(pickHelp).toContain("pick resource storage-account,aks");
+    const suggestHelp = run(["suggest", "--help"]);
+    expect(suggestHelp).toContain("resource");
+    expect(suggestHelp).toContain("suggest resource storage-account,aks");
+  });
+
+  it("pick resource validates targets and output modes before Azure calls", () => {
+    const empty = runFail(["pick", "resource"]);
+    expect(empty.status).toBe(3);
+    expect(empty.stderr).toContain("Missing resource list");
+    expect(empty.stderr).toContain("azw pick resource");
+
+    const bogus = runFail(["pick", "resource", "storage-account,made-up", "--eu"]);
+    expect(bogus.status).toBe(3);
+    expect(bogus.stderr).toContain("Unknown resource alias or invalid Azure resource type");
+
+    const name = runFail(["pick", "resource", "storage-account", "-o", "name"]);
+    expect(name.status).toBe(3);
+    expect(name.stderr).toContain("--output name is not supported for pick resource");
+
+    // A SKU-shaped token in the resource slot is a target validation error,
+    // not a VM scan.
+    const vm = runFail(["pick", "resource", "B1s"]);
+    expect(vm.status).toBe(3);
+    expect(vm.stderr).toContain("Unknown resource alias or invalid Azure resource type 'B1s'");
+  });
+
+  it("pick resource rejects --sku, which is VM-only", () => {
+    const res = runFail(["pick", "resource", "aks", "--sku", "B1s"]);
+    expect(res.status).toBe(3);
+    expect(res.stderr).toContain("--sku is VM-only");
+  });
+
+  it("suggest resource validates targets and --near before Azure calls", () => {
+    const empty = runFail(["suggest", "resource"]);
+    expect(empty.status).toBe(3);
+    expect(empty.stderr).toContain("Missing resource list");
+    expect(empty.stderr).toContain("azw suggest resource");
+
+    const near = runFail(["suggest", "resource", "aks", "--eu", "--near", "Atlantis"]);
+    expect(near.status).toBe(3);
+    expect(near.stderr).toContain("Unknown --near city 'Atlantis'");
+
+    const name = runFail(["suggest", "resource", "storage-account", "-o", "name"]);
+    expect(name.status).toBe(3);
+    expect(name.stderr).toContain("--output name is not supported for suggest resource");
+
+    const sku = runFail(["suggest", "resource", "aks", "--sku", "B1s"]);
+    expect(sku.status).toBe(3);
+    expect(sku.stderr).toContain("--sku is VM-only");
+  });
+
   it("suggest command exists and has near/json flags", () => {
     const output = run(["suggest", "--help"]);
     expect(output).toContain("suggest");

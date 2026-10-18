@@ -48,8 +48,8 @@ The canonical grammar should be used for new docs and new resource kinds, while 
 | `compare.ts` | `azw compare vm <sku-list>` / `azw compare resource <target-list>` - region × size deployability and region × type availability matrices |
 | `verify.ts` | `azw verify <files...>` - IaC preflight for VM location+size pairs and generic resource locations |
 | `regions.ts` | `azw regions <sku>` - full availability table |
-| `pick.ts` | `azw pick <sku>` - one region name for scripts |
-| `suggest.ts` | `azw suggest <sku>` - recommended region with a short reason |
+| `pick.ts` | `azw pick vm <sku>` / `azw pick resource <target-list>` - one region name for scripts |
+| `suggest.ts` | `azw suggest vm <sku>` / `azw suggest resource <target-list>` - recommended region with a short reason |
 | `available.ts` | `azw available --family <prefix>` - deployable VM SKUs in a family |
 | `price.ts` | `azw price <sku> --region <name>` - retail compute price estimate |
 | `quota.ts` | `azw quota <sku>` - quota-focused view sorted by free vCPUs |
@@ -122,6 +122,8 @@ Policy assignments are not cached. Policy remains live because it can directly d
 ## Suggestion
 
 `src/core/suggest.ts` powers `azw suggest`. It considers only `AVAILABLE` regions, prefers more free quota, optionally applies proximity with a built-in coordinate table, and uses region name as a stable tie-break.
+
+`chooseResourceSuggestion` in the same module powers `azw suggest resource` (since 0.4.10). Candidates are the regions that advertise every requested type; resource rows carry no quota signal, so scoring is proximity only — `--near` ranks by haversine distance (`score: -distanceKm`), otherwise every candidate ties at 0 and the stable geography-group-then-name axis order wins. Reasons always state the availability-not-deployability caveat.
 
 `pick` remains strict and script-first. `suggest` is the human-facing recommendation command.
 

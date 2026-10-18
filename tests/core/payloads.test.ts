@@ -6,13 +6,16 @@ import {
   buildCheckVmPayload,
   buildCompareResourcePayload,
   buildPickPayload,
+  buildPickResourcePayload,
   buildSuggestPayload,
+  buildSuggestResourcePayload,
   buildVerifyPayload,
 } from "../../src/core/payloads.js";
 import { classifyCompareResources } from "../../src/core/compareResource.js";
 import type { IacResourcePair, IacSkippedResource } from "../../src/core/iac.js";
 import { POLICY_DISABLED } from "../../src/core/policy.js";
 import { classifyResourceLocation, resolveResourceType } from "../../src/core/resources.js";
+import { chooseResourceSuggestion, resolvePlace } from "../../src/core/suggest.js";
 import { baseVerdict, buildQuotaVerdict } from "../../src/core/scan.js";
 import type {
   AzLocation,
@@ -317,6 +320,92 @@ describe("pick and suggest payload contracts", () => {
       policy: POLICY_DISABLED,
       suggestion: null,
     });
+    expect(failure.suggested).toBeNull();
+  });
+});
+
+describe("pick and suggest resource payload contracts (since 0.4.10)", () => {
+  const nearSuggestion = chooseResourceSuggestion([location], 2, resolvePlace("Luxembourg"));
+
+  function pickPayload(OK: boolean) {
+    return buildPickResourcePayload({
+      targets: ["storage-account", "key-vault"],
+      resolved: [resolved, resolved],
+      cache,
+      policy: POLICY_DISABLED,
+      location: OK ? location : null,
+    });
+  }
+
+  function suggestPayload(ok: boolean) {
+    return buildSuggestResourcePayload({
+      targets: ["storage-account", "key-vault"],
+      resolved: [resolved, resolved],
+      geography: "Europe",
+      near: "Luxembourg",
+      elapsedMs: 3800,
+      cache,
+      policy: POLICY_DISABLED,
+      suggestion: ok ? nearSuggestion : null,
+    });
+  }
+
+  it("pick resource pins fields and the picked object, quota-free", () => {
+    const payload = pickPayload(true);
+    expect(Object.keys(payload)).toEqual([
+      "schemaVersion",
+      "kind",
+      "resourceKind",
+      "confidence",
+      "targets",
+      "resolved",
+      "cache",
+      "policy",
+      "picked",
+    ]);
+    expect(payload.kind).toBe("pick");
+    expect(payload.resourceKind).toBe("resource");
+    expect(payload.confidence).toBe("availability");
+    expect(Object.keys(payload.picked!)).toEqual(["region", "displayName", "geographyGroup"]);
+    expect(payload.picked!.region).toBe("westeurope");
+    expect(payload.picked!.geographyGroup).toBe("Europe");
+  });
+
+  it("pick resource failure keeps the same fields with picked null", () => {
+    const payload = pickPayload(false);
+    expect(payload.picked).toBeNull();
+    expect(payload.resolved).toHaveLength(2);
+  });
+
+  it("suggest resource pins fields with geography/near/elapsedMs and the suggested object", () => {
+    const success = suggestPayload(true);
+    expect(Object.keys(success)).toEqual([
+      "schemaVersion",
+      "kind",
+      "resourceKind",
+      "confidence",
+      "targets",
+      "resolved",
+      "geography",
+      "near",
+      "elapsedMs",
+      "cache",
+      "policy",
+      "suggested",
+    ]);
+    expect(success.kind).toBe("suggest");
+    expect(Object.keys(success.suggested!)).toEqual([
+      "region",
+      "displayName",
+      "reason",
+      "score",
+      "factors",
+    ]);
+    // Factors carry distance and geography only — resource rows have no quota.
+    expect(Object.keys(success.suggested!.factors)).toEqual(["distanceKm", "geographyGroup"]);
+    expect(success.suggested!.score).toBe(-success.suggested!.factors.distanceKm!);
+
+    const failure = suggestPayload(false);
     expect(failure.suggested).toBeNull();
   });
 });

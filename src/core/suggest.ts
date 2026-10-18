@@ -1,4 +1,4 @@
-import type { RegionVerdict } from "./types.js";
+import type { AzLocation, RegionVerdict } from "./types.js";
 
 export interface Coordinates {
   lat: number;
@@ -95,6 +95,66 @@ function coordinatesForRegion(row: RegionVerdict): Coordinates | null {
     resolvePlace(row.physicalLocation ?? "") ??
     resolvePlace(row.displayName) ??
     resolvePlace(row.region)
+  );
+}
+
+/** Proximity-based recommendation for `azw suggest resource`. Since 0.4.10. */
+export interface ResourceSuggestion {
+  location: AzLocation;
+  score: number;
+  reason: string;
+  factors: {
+    distanceKm?: number;
+    geographyGroup?: string;
+  };
+}
+
+/**
+ * Rank the regions that advertise every requested type and return the best
+ * one. Resource rows carry no quota signal, so scoring is distance only:
+ * `--near` ranks candidates by haversine distance (score `-distanceKm`);
+ * without it every candidate ties at 0 and the stable geography-group-then-
+ * name axis order wins (Array.prototype.sort is stable, so equal scores keep
+ * the caller's order).
+ */
+export function chooseResourceSuggestion(
+  locations: AzLocation[],
+  targetCount: number,
+  near?: Coordinates | null,
+): ResourceSuggestion | null {
+  if (locations.length === 0) return null;
+  const ranked = locations
+    .map((location) => buildResourceSuggestion(location, targetCount, near))
+    .sort((a, b) => b.score - a.score);
+  return ranked[0] ?? null;
+}
+
+function buildResourceSuggestion(
+  location: AzLocation,
+  targetCount: number,
+  near?: Coordinates | null,
+): ResourceSuggestion {
+  const coords = locationCoordinates(location);
+  const distanceKm = near && coords ? Math.round(distanceKmBetween(near, coords)) : undefined;
+  const types = `all ${targetCount} requested resource type${targetCount === 1 ? "" : "s"}`;
+  const nearReason =
+    distanceKm !== undefined ? ` and is about ${distanceKm} km from the requested location` : "";
+  return {
+    location,
+    score: distanceKm !== undefined ? -distanceKm : 0,
+    reason: `${location.name} advertises ${types}${nearReason} — availability, not deployability.`,
+    factors: {
+      distanceKm,
+      geographyGroup: location.metadata?.geographyGroup,
+    },
+  };
+}
+
+function locationCoordinates(location: AzLocation): Coordinates | null {
+  return (
+    resolvePlace(location.metadata?.physicalLocation ?? "") ??
+    resolvePlace(location.displayName) ??
+    resolvePlace(location.name)
   );
 }
 

@@ -65,6 +65,8 @@ azw check vm B1s --region westeurope
 azw availability vm B1s --eu
 azw pick vm B1s --eu
 azw suggest vm B1s --eu --near Luxembourg
+azw pick resource storage-account,key-vault --eu
+azw suggest resource storage-account,key-vault --eu --near Luxembourg
 azw compare vm B1s,B2s,D2s_v5 --eu
 azw compare resource storage-account,key-vault --eu
 
@@ -337,6 +339,8 @@ Confidence values:
 | `azw compare resource <target-list> [scope]` | Matrix across generic resource types and regions |
 | `azw availability resource <alias-or-type> [scope]` | Generic resource availability scan |
 | `azw check resource <alias-or-type> --region <name>` | One-region generic resource availability check |
+| `azw pick resource <target-list> [scope]` | Script-first region picker for generic resource types (one region advertising every requested type; availability, not deployability) |
+| `azw suggest resource <target-list> [scope] [--near <city>]` | Human recommendation for generic resource types (proximity-based; availability, not deployability) |
 
 ### Existing VM Compatibility Commands
 

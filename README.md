@@ -65,7 +65,9 @@ Two binaries are installed: `azw` and `az-where`. They are the same tool.
 | Compare several resource types at once | `azw compare resource storage-account,key-vault --eu` |
 | Preflight Terraform/Bicep before apply | `azw verify main.tf vm.tf` |
 | Print one deployable region | `azw pick vm B1s` |
+| Print one region that hosts every resource type | `azw pick resource storage-account,key-vault --eu` |
 | Get a recommended region with a reason | `azw suggest vm B1s --eu --near Luxembourg` |
+| Get a recommended resource region near you | `azw suggest resource storage-account,key-vault --eu --near Luxembourg` |
 | Check generic resource availability | `azw availability resource storage-account --eu` |
 | Check one resource in one region | `azw check resource storage-account --region westeurope` |
 | Find deployable SKUs in a family | `azw available --family B --eu` |
@@ -146,7 +148,11 @@ azw compare resource <target-list>
 azw verify <files...>    # preflight .tf/.bicep files: check VM size pairs and
                          # generic resource regions before terraform apply / az deployment
 azw pick vm <sku>        # one deployable region name for scripts
+azw pick resource <target-list>
+                         # one region name that advertises every requested type
 azw suggest vm <sku>     # recommended region with a short explanation
+azw suggest resource <target-list>
+                         # recommended resource region (proximity-based; availability, not deployability)
 azw regions <sku>        # compatibility shortcut for VM availability
 azw pick <sku>           # compatibility shortcut
 azw suggest <sku>        # compatibility shortcut
@@ -231,12 +237,14 @@ azw check vm B1s --region westeurope -o json
 azw availability resource storage-account --eu -o json
 azw compare vm B1s,B2s,D2s_v5 --eu -o json
 azw compare resource storage-account,key-vault --eu -o json
+azw pick resource storage-account,key-vault --eu -o json
+azw suggest resource storage-account,key-vault --eu --near Luxembourg -o json
 azw verify main.tf -o json
 ```
 
 `verify` exits `1` when a checked pair is blocked — a VM pair that cannot deploy, or a generic resource that is not advertised (or policy-denied) in the region its file names — so it can gate a CI step before `terraform apply`; resources with dynamic values are reported as skipped and never fail the run.`
 
-`compare vm` emits a stable matrix contract for choosing fallback sizes: a top-level `regions` axis plus one result per requested SKU with `deployableRegions`, `deployableCount`, and `verdictCounts`, so scripts can walk the SKU order and pick the first that deploys in a target region. `compare resource` emits the same matrix shape for generic resource types — `targets` instead of `skus`, `supportedRegions`/`supportedCount` per type, and `availability` confidence on every row, never deployability.
+`compare vm` emits a stable matrix contract for choosing fallback sizes: a top-level `regions` axis plus one result per requested SKU with `deployableRegions`, `deployableCount`, and `verdictCounts`, so scripts can walk the SKU order and pick the first that deploys in a target region. `compare resource` emits the same matrix shape for generic resource types — `targets` instead of `skus`, `supportedRegions`/`supportedCount` per type, and `availability` confidence on every row, never deployability. `pick resource` / `suggest resource` emit one `picked` / `suggested` object over the regions that advertise every requested type (`confidence: "availability"`), with a proximity-based reason on `suggest` — `factors` carry `distanceKm` (with `--near`) and `geographyGroup` only, never quota fields.
 
 Field-level JSON shapes for `availability`, `check`, `pick`, `suggest`, `compare`, and `verify` are documented as stable contracts in [docs/json-contracts.md](docs/json-contracts.md), pinned by tests. `check` payloads carry an `explanation` object (`code`, `reason`, `hint`) so agents get the same evidence-based blocker details humans see:
 

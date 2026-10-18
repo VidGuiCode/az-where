@@ -192,6 +192,67 @@ Same envelope with `resourceKind: "resource"`, `resolved`, `confidence: "availab
 - `near` is the `--near` input or `null`. `factors.distanceKm` appears only with `--near`.
 - On failure the same payload is printed with `suggested: null` and exit `1`.
 
+### `azw pick resource <target-list> [scope] -o json` (since 0.4.10)
+
+One script-value region where **every** requested type is `RESOURCE_SUPPORTED` — the first such region on the stable geography-group-then-name axis. A single target degenerates to the simple case.
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "pick",
+  "resourceKind": "resource",
+  "confidence": "availability",
+  "targets": ["storage-account", "key-vault"],
+  "resolved": [
+    {
+      "input": "storage-account",
+      "resourceType": "Microsoft.Storage/storageAccounts",
+      "alias": "storage-account",
+      "namespace": "Microsoft.Storage",
+      "typePath": "storageAccounts"
+    }
+  ],
+  "cache": { "used": true, "refreshed": false, "ttlSeconds": 600 },
+  "policy": { "...": "..." },
+  "picked": { "region": "northeurope", "displayName": "North Europe", "geographyGroup": "Europe" }
+}
+```
+
+- Targets reuse the `compare resource` parser: same friendly aliases and raw types, validated, deduplicated case-insensitively (on the resolved type), capped at 30 — all before any Azure call. One shared provider-catalog call per run, so there is no `--concurrency` flag.
+- `resolved` carries one entry per target in request order; `picked` carries `region`, `displayName`, and `geographyGroup` only — resource rows have no quota fields.
+- On failure the same payload is printed with `picked: null` and exit `1`; the human path explains the closest miss (the requested type supported in the fewest scanned regions).
+- Default human output is the bare region name, like `pick vm`; `-o value` prints the same bare name; `-o name` is rejected as a validation error. No `--region` flag: scoping to one region is `check resource`'s job. Scope flags otherwise match `pick vm` (`--eu`, `--us`, `--asia`, `--geography`, `--no-policy`, `--refresh`).
+
+### `azw suggest resource <target-list> [scope] [--near <city>] -o json` (since 0.4.10)
+
+One human recommendation with a reason. Resource rows carry no quota signal, so scoring is proximity-based: `--near` ranks the all-supported regions by haversine distance (`score: -distanceKm`); without it every candidate ties at `0` and the stable region axis order wins.
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "suggest",
+  "resourceKind": "resource",
+  "confidence": "availability",
+  "targets": ["storage-account", "key-vault"],
+  "resolved": [ { "...": "one resolved entry per target, as above" } ],
+  "geography": "Europe",
+  "near": "Luxembourg",
+  "elapsedMs": 3800,
+  "cache": { "...": "..." },
+  "policy": { "...": "..." },
+  "suggested": {
+    "region": "westeurope",
+    "displayName": "West Europe",
+    "reason": "westeurope advertises all 2 requested resource types and is about 322 km from the requested location — availability, not deployability.",
+    "score": -322,
+    "factors": { "distanceKm": 322, "geographyGroup": "Europe" }
+  }
+}
+```
+
+- The reason always states that all N requested types are advertised there and carries the availability-not-deployability caveat; `factors` carries `distanceKm` (only with `--near`) and `geographyGroup` — never `free`/`limit`, which resource rows do not have.
+- On failure the same payload is printed with `suggested: null` and exit `1`. Scope flags match `suggest vm` (`--eu`, `--us`, `--asia`, `--geography`, `--near`, `--no-policy`, `--refresh`); no `--region`.
+
 ### `azw compare vm <sku-list> [scope] -o json`
 
 Documented with 0.4.5: a shared `regions` string axis plus `results[]` — one per requested SKU in request order — carrying `family`, `vcpus`, `memoryGiB`, per-region cells, `deployableRegions`, `deployableCount`, and `verdictCounts`. See the 0.4.5 changelog entry for the full field list.

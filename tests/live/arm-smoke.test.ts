@@ -257,6 +257,107 @@ describe.runIf(LIVE)("live compare resource (0.4.9)", () => {
   });
 });
 
+describe.runIf(LIVE)("live pick and suggest resource (0.4.10)", () => {
+  it("pick resource across EU returns one all-supported region or a null payload", () => {
+    const res = runJson(["pick", "resource", "storage-account,key-vault", "--eu", "-o", "json"]);
+    // Exit 0 (a region advertises every type) or 1 (none does) are both valid
+    // outcomes; anything else means auth/usage/install failure.
+    expect([0, 1]).toContain(res.status);
+
+    const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(payload.schemaVersion).toBe(1);
+    expect(payload.kind).toBe("pick");
+    expect(payload.resourceKind).toBe("resource");
+    expect(payload.confidence).toBe("availability");
+    expect(payload.targets).toEqual(["storage-account", "key-vault"]);
+
+    const resolved = payload.resolved as Array<Record<string, unknown>>;
+    expect(resolved).toHaveLength(2);
+    for (const entry of resolved) expect(String(entry.resourceType)).toContain("/");
+
+    const picked = payload.picked as Record<string, unknown> | null;
+    if (res.status === 0) {
+      expect(typeof picked!.region).toBe("string");
+      expect(typeof picked!.displayName).toBe("string");
+      // Quota-free picked object: region, displayName, geographyGroup only.
+      expect(Object.keys(picked!)).toEqual(["region", "displayName", "geographyGroup"]);
+    } else {
+      expect(picked).toBeNull();
+    }
+  });
+
+  it("pick resource -o value prints the bare region name on stdout", () => {
+    const res = runJson(["pick", "resource", "storage-account", "--eu", "-o", "value"]);
+    if (res.status === 0) {
+      expect(res.stdout.trim()).toMatch(/^[a-z][a-z0-9]*$/);
+    } else {
+      expect(res.status).toBe(1);
+      expect(res.stdout).toBe("");
+    }
+  });
+
+  it("suggest resource with --near ranks by distance and explains availability", () => {
+    const res = runJson([
+      "suggest",
+      "resource",
+      "storage-account,key-vault",
+      "--eu",
+      "--near",
+      "Luxembourg",
+      "-o",
+      "json",
+    ]);
+    expect([0, 1]).toContain(res.status);
+
+    const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(payload.kind).toBe("suggest");
+    expect(payload.resourceKind).toBe("resource");
+    expect(payload.geography).toBe("Europe");
+    expect(payload.near).toBe("Luxembourg");
+
+    const suggested = payload.suggested as Record<string, unknown> | null;
+    if (res.status === 0) {
+      expect(String(suggested!.reason)).toContain("all 2 requested resource types");
+      expect(String(suggested!.reason)).toContain("availability, not deployability");
+      const factors = suggested!.factors as Record<string, unknown>;
+      expect(typeof factors.distanceKm).toBe("number");
+      expect(suggested!.score).toBe(-factors.distanceKm);
+      expect(typeof factors.geographyGroup).toBe("string");
+      // Resource rows carry no quota signal — free/limit never appear.
+      expect(factors.free).toBeUndefined();
+      expect(factors.limit).toBeUndefined();
+    } else {
+      expect(suggested).toBeNull();
+    }
+  });
+
+  it("suggest resource without --near ties every candidate at zero", () => {
+    const res = runJson(["suggest", "resource", "storage-account", "--eu", "-o", "json"]);
+    expect([0, 1]).toContain(res.status);
+
+    const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(payload.near).toBeNull();
+    const suggested = payload.suggested as Record<string, unknown> | null;
+    if (res.status === 0) {
+      expect(suggested!.score).toBe(0);
+      const factors = suggested!.factors as Record<string, unknown>;
+      expect(factors.distanceKm).toBeUndefined();
+    } else {
+      expect(suggested).toBeNull();
+    }
+  });
+
+  it("pick and suggest resource validate targets before Azure calls (exit 3)", () => {
+    const pick = runJson(["pick", "resource", "made-up-resource", "--eu", "-o", "json"]);
+    expect(pick.status).toBe(3);
+    const pickErr = JSON.parse(pick.stderr) as Record<string, unknown>;
+    expect(pickErr.code).toBe("ValidationError");
+
+    const suggest = runJson(["suggest", "resource", "storage-account,made-up", "--eu", "-o", "json"]);
+    expect(suggest.status).toBe(3);
+  });
+});
+
 describe.runIf(LIVE)("live check contracts (0.4.6)", () => {
   it("check vm -o json returns the documented payload with an explanation", () => {
     const res = runJson(["check", "vm", "B1s", "--region", "westeurope", "-o", "json"]);
