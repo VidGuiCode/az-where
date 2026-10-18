@@ -182,6 +182,68 @@ describe("CLI smoke tests", () => {
     expect(res.stderr).toContain("--region scopes to a single region");
   });
 
+  it("compare command exposes the resource matrix subcommand", () => {
+    const output = run(["compare", "--help"]);
+    expect(output).toContain("resource");
+    const resourceHelp = run(["compare", "resource", "--help"]);
+    expect(resourceHelp).toContain("--region");
+    expect(resourceHelp).toContain("--eu");
+    expect(resourceHelp).toContain("--us");
+    expect(resourceHelp).toContain("--asia");
+    expect(resourceHelp).toContain("--geography");
+    expect(resourceHelp).toContain("--no-policy");
+    expect(resourceHelp).toContain("--refresh");
+    expect(resourceHelp).toContain("--output");
+    expect(resourceHelp).toContain("--json");
+    // One shared provider-catalog call per run — nothing to parallelize.
+    expect(resourceHelp).not.toContain("--concurrency");
+  });
+
+  it("compare resource rejects value and name output modes before Azure calls", () => {
+    const value = runFail(["compare", "resource", "storage-account,aks", "-o", "value"]);
+    expect(value.status).toBe(3);
+    expect(value.stderr).toContain("--output value is not supported for compare resource");
+
+    const name = runFail(["compare", "resource", "storage-account,aks", "-o", "name"]);
+    expect(name.status).toBe(3);
+    expect(name.stderr).toContain("--output name is not supported for compare resource");
+  });
+
+  it("compare resource validates the target list before Azure calls", () => {
+    const empty = runFail(["compare", "resource", ""]);
+    expect(empty.status).toBe(3);
+    expect(empty.stderr).toContain("Missing resource list");
+
+    const gap = runFail(["compare", "resource", "storage-account,,aks"]);
+    expect(gap.status).toBe(3);
+    expect(gap.stderr).toContain("empty entry");
+
+    const bogus = runFail(["compare", "resource", "storage-account,made-up"]);
+    expect(bogus.status).toBe(3);
+    expect(bogus.stderr).toContain("Unknown resource alias or invalid Azure resource type");
+
+    const tooMany = runFail([
+      "compare",
+      "resource",
+      Array.from({ length: 31 }, (_, i) => `Microsoft.Nonsense/type${i}`).join(","),
+    ]);
+    expect(tooMany.status).toBe(3);
+    expect(tooMany.stderr).toContain("up to 30 resource types");
+  });
+
+  it("compare resource rejects --region combined with geography flags before Azure calls", () => {
+    const res = runFail([
+      "compare",
+      "resource",
+      "storage-account,aks",
+      "--region",
+      "westeurope",
+      "--eu",
+    ]);
+    expect(res.status).toBe(3);
+    expect(res.stderr).toContain("--region scopes to a single region");
+  });
+
   it("verify command has a help screen with file arguments and no scope flags", () => {
     const output = run(["verify", "--help"]);
     expect(output).toContain("verify");

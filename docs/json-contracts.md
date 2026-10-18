@@ -196,6 +196,47 @@ Same envelope with `resourceKind: "resource"`, `resolved`, `confidence: "availab
 
 Documented with 0.4.5: a shared `regions` string axis plus `results[]` — one per requested SKU in request order — carrying `family`, `vcpus`, `memoryGiB`, per-region cells, `deployableRegions`, `deployableCount`, and `verdictCounts`. See the 0.4.5 changelog entry for the full field list.
 
+### `azw compare resource <target-list> [scope] -o json` (since 0.4.9)
+
+Region × type matrix of generic resource availability verdicts, mirroring `compare vm`. Targets accept the same friendly aliases and raw Azure resource types as `availability resource`; they are validated, deduplicated case-insensitively (on the resolved resource type), and capped at 30 per invocation before any Azure call. Comparing N types costs one provider-catalog call — the same as a single `check resource` scan — so there is no `--concurrency` flag.
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "compare",
+  "resourceKind": "resource",
+  "confidence": "availability",
+  "targets": ["storage-account", "key-vault"],
+  "regions": ["northeurope", "westeurope"],
+  "geography": "Europe",
+  "region": null,
+  "scannedAt": "2026-10-18T12:00:00.000Z",
+  "elapsedMs": 3800,
+  "cache": { "used": true, "refreshed": false, "ttlSeconds": 600 },
+  "policy": { "...": "..." },
+  "results": [
+    {
+      "target": "storage-account",
+      "resolved": {
+        "input": "storage-account",
+        "resourceType": "Microsoft.Storage/storageAccounts",
+        "alias": "storage-account",
+        "namespace": "Microsoft.Storage",
+        "typePath": "storageAccounts"
+      },
+      "regions": [ { "...": "resource region row" } ],
+      "supportedRegions": ["westeurope"],
+      "supportedCount": 1,
+      "verdictCounts": { "RESOURCE_SUPPORTED": 1, "RESOURCE_NOT_SUPPORTED": 1, "POLICY_DENIED": 0 }
+    }
+  ]
+}
+```
+
+- `regions` is the shared string axis; each `results[]` entry's `regions` rows align with it in the same order, one resource region row per scanned region, each carrying `confidence: "availability"` — a comparison never claims deployability.
+- `results[]` keeps request order after dedupe; `target` is the first form the user gave and `resolved` mirrors `availability resource`.
+- Exit `1` when no requested type is supported in any region (payload is still printed); `-o value` and `-o name` are rejected as validation errors before any Azure call.
+
 ### `azw verify <files...> -o json` (since 0.4.7)
 
 IaC preflight: one `results[]` row per statically-known `location + size` pair parsed from Terraform/Bicep files, plus a `skipped[]` list of VM resources that could not be checked. Since 0.4.8, generic `type + location` pairs (storage accounts, key vaults, web/function apps, service plans, AKS, PostgreSQL flexible servers, …) are checked in a separate `genericResources` section.

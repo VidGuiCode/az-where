@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.9
+
+### Resource Comparison
+
+- `azw compare resource storage-account,key-vault,aks --eu` renders a region × type matrix of generic resource availability verdicts, mirroring `compare vm` (0.4.5) with the resource vocabulary (`RESOURCE_SUPPORTED` / `RESOURCE_NOT_SUPPORTED` / `POLICY_DENIED`) and `availability` confidence on every row — a comparison never claims deployability.
+- Targets accept the same friendly aliases and raw Azure resource types as `availability resource`. They are validated, deduplicated case-insensitively on the resolved resource type (alias and raw forms of the same type collapse to the first form given), and capped at 30 per invocation — all before any Azure call. `--output value` and `--output name` are rejected as validation errors, exactly like `compare vm`.
+- Cost stays flat: the matrix reuses the provider-catalog engine split out in 0.4.8 (`classifyResourceType` + `listProviderCatalog`), so comparing N types makes one shared catalog call per run — the same as a single `check resource` scan. There is no `--concurrency` flag because there is nothing to parallelize.
+- Stable JSON contract (`kind: "compare"`, `resourceKind: "resource"`, `confidence: "availability"`, additive at `schemaVersion: 1`, built through `src/core/payloads.ts`): a shared `regions` string axis plus one `results[]` entry per target in request order carrying `target`, `resolved` (`{input, resourceType, alias, namespace, typePath}`), full per-region verdict rows aligned to the axis, `supportedRegions`, `supportedCount`, and `verdictCounts`. The VM compare payload is untouched.
+- Human table sorts regions where every requested type is supported to the top, then by per-region coverage, with a legend that states the availability-not-deployability caveat and a per-type `supported in X/Y regions` summary; with several targets it names the regions where all of them are supported (or reports that none exists).
+- Scope flags match `availability resource` (`--region`, `--eu`, `--us`, `--asia`, `--geography`, `--no-policy`, `--refresh`). Exit `1` when no requested type is supported in any region; the payload is still printed.
+
 ## 0.4.8
 
 ### Verify Generic Resources

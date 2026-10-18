@@ -62,6 +62,7 @@ Two binaries are installed: `azw` and `az-where`. They are the same tool.
 | Check only Europe / US / Asia Pacific | `azw availability vm B1s --eu` / `--us` / `--asia` |
 | Check one VM size in one region | `azw check vm B1s --region westeurope` |
 | Compare several VM sizes at once | `azw compare vm B1s,B2s,D2s_v5 --eu` |
+| Compare several resource types at once | `azw compare resource storage-account,key-vault --eu` |
 | Preflight Terraform/Bicep before apply | `azw verify main.tf vm.tf` |
 | Print one deployable region | `azw pick vm B1s` |
 | Get a recommended region with a reason | `azw suggest vm B1s --eu --near Luxembourg` |
@@ -140,6 +141,8 @@ azw check resource <alias-or-type> --region <name>
                          # one-region generic resource availability verdict
 azw compare vm <sku-list>
                          # region × size deployability matrix (e.g. B1s,B2s,D2s_v5)
+azw compare resource <target-list>
+                         # region × type availability matrix (aliases or raw types)
 azw verify <files...>    # preflight .tf/.bicep files: check VM size pairs and
                          # generic resource regions before terraform apply / az deployment
 azw pick vm <sku>        # one deployable region name for scripts
@@ -227,12 +230,13 @@ azw availability vm B1s --eu -o compact
 azw check vm B1s --region westeurope -o json
 azw availability resource storage-account --eu -o json
 azw compare vm B1s,B2s,D2s_v5 --eu -o json
+azw compare resource storage-account,key-vault --eu -o json
 azw verify main.tf -o json
 ```
 
 `verify` exits `1` when a checked pair is blocked — a VM pair that cannot deploy, or a generic resource that is not advertised (or policy-denied) in the region its file names — so it can gate a CI step before `terraform apply`; resources with dynamic values are reported as skipped and never fail the run.`
 
-`compare vm` emits a stable matrix contract for choosing fallback sizes: a top-level `regions` axis plus one result per requested SKU with `deployableRegions`, `deployableCount`, and `verdictCounts`, so scripts can walk the SKU order and pick the first that deploys in a target region.
+`compare vm` emits a stable matrix contract for choosing fallback sizes: a top-level `regions` axis plus one result per requested SKU with `deployableRegions`, `deployableCount`, and `verdictCounts`, so scripts can walk the SKU order and pick the first that deploys in a target region. `compare resource` emits the same matrix shape for generic resource types — `targets` instead of `skus`, `supportedRegions`/`supportedCount` per type, and `availability` confidence on every row, never deployability.
 
 Field-level JSON shapes for `availability`, `check`, `pick`, `suggest`, `compare`, and `verify` are documented as stable contracts in [docs/json-contracts.md](docs/json-contracts.md), pinned by tests. `check` payloads carry an `explanation` object (`code`, `reason`, `hint`) so agents get the same evidence-based blocker details humans see:
 

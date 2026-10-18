@@ -22,7 +22,11 @@ const LIVE = Boolean(process.env.AZW_LIVE);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(__dirname, "../../dist/cli.js");
 
-const RESOURCE_VERDICTS = new Set(["RESOURCE_SUPPORTED", "RESOURCE_NOT_SUPPORTED", "POLICY_DENIED"]);
+const RESOURCE_VERDICTS = new Set([
+  "RESOURCE_SUPPORTED",
+  "RESOURCE_NOT_SUPPORTED",
+  "POLICY_DENIED",
+]);
 const VM_VERDICTS = new Set([
   "AVAILABLE",
   "FULL",
@@ -164,7 +168,7 @@ describe.runIf(LIVE)("live compare vm", () => {
         expect(VM_VERDICTS.has(String(cell.verdict))).toBe(true);
       }
       const deployable = result.deployableRegions as string[];
-      expect((result.deployableCount as number)).toBe(deployable.length);
+      expect(result.deployableCount as number).toBe(deployable.length);
       for (const name of deployable) expect(regions).toContain(name);
     }
 
@@ -174,7 +178,75 @@ describe.runIf(LIVE)("live compare vm", () => {
   });
 
   it("compare vm in a single region collapses the matrix to one row", () => {
-    const res = runJson(["compare", "vm", "Standard_B1s,Standard_B2s", "--region", "westeurope", "-o", "json"]);
+    const res = runJson([
+      "compare",
+      "vm",
+      "Standard_B1s,Standard_B2s",
+      "--region",
+      "westeurope",
+      "-o",
+      "json",
+    ]);
+    expect([0, 1]).toContain(res.status);
+
+    const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(payload.region).toBe("westeurope");
+    expect(payload.regions).toEqual(["westeurope"]);
+    const results = payload.results as Array<Record<string, unknown>>;
+    expect(results.every((r) => (r.regions as unknown[]).length === 1)).toBe(true);
+  });
+});
+
+describe.runIf(LIVE)("live compare resource (0.4.9)", () => {
+  it("compare resource across EU returns the documented matrix contract", () => {
+    const res = runJson(["compare", "resource", "storage-account,key-vault", "--eu", "-o", "json"]);
+    // Exit 0 (some type is supported somewhere) or 1 (none is) are both valid
+    // outcomes; anything else means auth/usage/install failure.
+    expect([0, 1]).toContain(res.status);
+
+    const payload = JSON.parse(res.stdout) as Record<string, unknown>;
+    expect(payload.schemaVersion).toBe(1);
+    expect(payload.kind).toBe("compare");
+    expect(payload.resourceKind).toBe("resource");
+    expect(payload.confidence).toBe("availability");
+    expect(payload.targets).toEqual(["storage-account", "key-vault"]);
+
+    const regions = payload.regions as string[];
+    expect(Array.isArray(regions)).toBe(true);
+    expect(regions.length).toBeGreaterThan(0);
+
+    const results = payload.results as Array<Record<string, unknown>>;
+    expect(results.map((r) => r.target)).toEqual(payload.targets);
+    for (const result of results) {
+      const resolved = result.resolved as Record<string, unknown>;
+      expect(String(resolved.resourceType)).toContain("/");
+      const rows = result.regions as Array<Record<string, unknown>>;
+      // Every per-target row aligns with the shared region axis.
+      expect(rows.map((row) => row.region)).toEqual(regions);
+      for (const row of rows) {
+        expect(RESOURCE_VERDICTS.has(String(row.verdict))).toBe(true);
+        expect(row.confidence).toBe("availability");
+      }
+      const supported = result.supportedRegions as string[];
+      expect(result.supportedCount).toBe(supported.length);
+      for (const name of supported) expect(regions).toContain(name);
+    }
+
+    // Exit code contract: 0 iff at least one type is supported in any region.
+    const anySupported = results.some((r) => (r.supportedCount as number) > 0);
+    expect(res.status).toBe(anySupported ? 0 : 1);
+  });
+
+  it("compare resource in a single region collapses the matrix to one row", () => {
+    const res = runJson([
+      "compare",
+      "resource",
+      "storage-account,aks",
+      "--region",
+      "westeurope",
+      "-o",
+      "json",
+    ]);
     expect([0, 1]).toContain(res.status);
 
     const payload = JSON.parse(res.stdout) as Record<string, unknown>;
@@ -220,7 +292,15 @@ describe.runIf(LIVE)("live check contracts (0.4.6)", () => {
   });
 
   it("check resource -o json returns the documented payload with cause evidence", () => {
-    const res = runJson(["check", "resource", "storage-account", "--region", "westeurope", "-o", "json"]);
+    const res = runJson([
+      "check",
+      "resource",
+      "storage-account",
+      "--region",
+      "westeurope",
+      "-o",
+      "json",
+    ]);
     expect([0, 1]).toContain(res.status);
 
     const payload = JSON.parse(res.stdout) as Record<string, unknown>;

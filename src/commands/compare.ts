@@ -9,6 +9,15 @@ import {
   scanCompare,
   sortCompareRowsForTable,
 } from "../core/compare.js";
+import {
+  allSupportedRegions,
+  buildCompareResourceTable,
+  compareResourceColumnLabel,
+  compareResourceLegendLine,
+  parseResourceTargetList,
+  scanCompareResources,
+  sortCompareResourceRowsForTable,
+} from "../core/compareResource.js";
 import { c, colorEnabled } from "../core/color.js";
 import { exitWithError, ValidationError } from "../core/errors.js";
 import { filterByGeography, listLocations, resolveGeography } from "../core/geo.js";
@@ -20,19 +29,22 @@ import {
   isScriptOutput,
   resolveOutputMode,
 } from "../core/outputMode.js";
+import { buildCompareResourcePayload } from "../core/payloads.js";
 import { loadPolicyCheck, type PolicySummary } from "../core/policy.js";
 
 /**
  * `azw compare vm B1s,B2s,D2s_v5 --eu` — matrix of deployability verdicts
- * across regions × VM sizes. VM-only in 0.4.5; resource comparison is
- * deliberately deferred (see docs/roadmap.md).
+ * across regions × VM sizes (0.4.5).
+ *
+ * `azw compare resource storage-account,key-vault,aks --eu` — the same matrix
+ * shape for generic resource availability verdicts (0.4.9).
  *
  * `value` and `name` are rejected as validation errors: a comparison has no
  * single script value or one-name-per-line meaning.
  */
 export function createCompareCommand(): Command {
   const cmd = new Command("compare").description(
-    "Compare multiple targets across regions (VM sizes for now).",
+    "Compare multiple targets across regions (VM sizes and resource types).",
   );
 
   const vm = new Command("vm")
@@ -51,7 +63,23 @@ export function createCompareCommand(): Command {
     });
   addOutputOption(addJsonCompatibilityOptions(vm, "Machine-readable JSON output"));
 
+  const resource = new Command("resource")
+    .description("Matrix of availability verdicts for several resource types across regions.")
+    .argument("<targets>", "Comma-separated resource list (e.g. storage-account,key-vault,aks)")
+    .option("--region <name>", "Scope to a single region")
+    .option("--eu", "Shortcut for --geography Europe")
+    .option("--us", "Shortcut for --geography US")
+    .option("--asia", "Shortcut for --geography 'Asia Pacific'")
+    .option("--geography <group>", "Filter by geographyGroup", "all")
+    .option("--no-policy", "Skip Azure Policy allowed-location checks")
+    .option("--refresh", "Bypass cached ARM location/provider data")
+    .action(async (targets: string, opts) => {
+      await runCompareResourceAction(targets, opts);
+    });
+  addOutputOption(addJsonCompatibilityOptions(resource, "Machine-readable JSON output"));
+
   cmd.addCommand(vm);
+  cmd.addCommand(resource);
   return cmd;
 }
 
@@ -93,9 +121,7 @@ export async function runCompareVmAction(
       etaSeconds: 5,
       refresh: Boolean(opts.refresh),
     });
-    const locations = opts.region
-      ? matchRegion(list, opts.region)
-      : filterByGeography(list, geo);
+    const locations = opts.region ? matchRegion(list, opts.region) : filterByGeography(list, geo);
     if (locations.length === 0) {
       throw new ValidationError(
         opts.region
@@ -109,7 +135,11 @@ export async function runCompareVmAction(
       enabled: opts.policy !== false,
       required: false,
     });
-    const { regionRows, skus: summaries, elapsedMs } = await scanCompare({
+    const {
+      regionRows,
+      skus: summaries,
+      elapsedMs,
+    } = await scanCompare({
       skus,
       locations,
       concurrency,
@@ -153,11 +183,7 @@ export async function runCompareVmAction(
       );
       const line = `${label}   deployable in ${summary.deployableCount}/${regionRows.length} regions`;
       printInfo(
-        colorEnabled()
-          ? summary.deployableCount > 0
-            ? c.green(line)
-            : c.red(line)
-          : line,
+        colorEnabled() ? (summary.deployableCount > 0 ? c.green(line) : c.red(line)) : line,
       );
     }
 
@@ -181,6 +207,128 @@ export async function runCompareVmAction(
     printInfo(colorEnabled() ? c.dim(footer) : footer);
 
     if (!anyDeployable) process.exit(1);
+  } catch (err) {
+    exitWithError(err, jsonErrors);
+  }
+}
+
+export async function runCompareResourceAction(
+  positional: string,
+  opts: {
+    region?: string;
+    eu?: boolean;
+    us?: boolean;
+    asia?: boolean;
+    geography?: string;
+    policy?: boolean;
+    refresh?: boolean;
+    json?: boolean;
+    compact?: boolean;
+    output?: string;
+  },
+): Promise<void> {
+  let jsonErrors = Boolean(opts.json);
+  try {
+    const mode = resolveOutputMode(opts, { command: "compare resource" });
+    jsonErrors = isJsonOutput(mode);
+    const targets = parseResourceTargetList(positional);
+
+    if (opts.region) validateRegionScope(opts);
+
+    const geoInput = opts.eu
+      ? "eu"
+      : opts.us
+        ? "us"
+        : opts.asia
+          ? "asia"
+          : (opts.geography ?? "all");
+    const geo = resolveGeography(geoInput);
+
+    const list = await listLocations({
+      progressLabel: `Comparing ${targets.length} resource type${targets.length === 1 ? "" : "s"}`,
+      etaSeconds: 5,
+      refresh: Boolean(opts.refresh),
+    });
+    const locations = opts.region ? matchRegion(list, opts.region) : filterByGeography(list, geo);
+    if (locations.length === 0) {
+      throw new ValidationError(
+        opts.region
+          ? `Unknown region '${opts.region}'. Try: azw geos`
+          : `No regions matched geography '${geoInput}'. Try: azw geos`,
+      );
+    }
+
+    const policy = await loadPolicyCheck({
+      enabled: opts.policy !== false,
+      required: false,
+    });
+    const {
+      regionRows,
+      targets: summaries,
+      elapsedMs,
+    } = await scanCompareResources({
+      targets,
+      locations,
+      refresh: Boolean(opts.refresh),
+      policy: policy.check,
+    });
+
+    const anySupported = summaries.some((s) => s.supportedCount > 0);
+
+    if (isJsonOutput(mode)) {
+      printJson(
+        buildCompareResourcePayload({
+          targets,
+          // Region axis shared by every per-target result below, in the same order.
+          regions: regionRows.map((row) => row.location.name),
+          geography: opts.region ? null : (geo ?? "all"),
+          region: opts.region ? locations[0].name : null,
+          scannedAt: new Date().toISOString(),
+          elapsedMs,
+          cache: armCacheSummary(),
+          policy: policy.summary,
+          results: summaries,
+        }),
+      );
+      if (!anySupported) process.exit(1);
+      return;
+    }
+
+    printPolicyWarning(policy.summary, mode);
+    const sorted = sortCompareResourceRowsForTable(regionRows);
+    const { headers, body } = buildCompareResourceTable(sorted, targets);
+    printTable(body, headers);
+    printInfo(compareResourceLegendLine());
+
+    console.log("");
+    for (const summary of summaries) {
+      const label = compareResourceColumnLabel(summary.target).padEnd(
+        Math.max(...targets.map((t) => compareResourceColumnLabel(t).length)),
+      );
+      const line = `${label}   supported in ${summary.supportedCount}/${regionRows.length} regions`;
+      printInfo(colorEnabled() ? (summary.supportedCount > 0 ? c.green(line) : c.red(line)) : line);
+    }
+
+    if (targets.length > 1) {
+      const everywhere = allSupportedRegions(sorted);
+      if (everywhere.length > 0) {
+        const msg = `All ${targets.length} types are supported in ${everywhere.length} region${
+          everywhere.length === 1 ? "" : "s"
+        }: ${everywhere.join(", ")}`;
+        printInfo(colorEnabled() ? c.green(c.bold(msg)) : msg);
+      } else {
+        const msg = "No single region advertises every requested type.";
+        printInfo(colorEnabled() ? c.yellow(msg) : msg);
+      }
+    }
+
+    const seconds = (elapsedMs / 1000).toFixed(1);
+    const footer = `Compared ${targets.length} resource type${targets.length === 1 ? "" : "s"} across ${
+      regionRows.length
+    } region${regionRows.length === 1 ? "" : "s"} in ${seconds}s.`;
+    printInfo(colorEnabled() ? c.dim(footer) : footer);
+
+    if (!anySupported) process.exit(1);
   } catch (err) {
     exitWithError(err, jsonErrors);
   }

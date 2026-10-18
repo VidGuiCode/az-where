@@ -10,6 +10,7 @@
  */
 
 import type { CacheSummary } from "./cache.js";
+import type { CompareResourceSummary } from "./compareResource.js";
 import { explainResourceVerdict, explainVmVerdict } from "./explain.js";
 import type { IacFormat, IacSkippedResource } from "./iac.js";
 import type { PolicySummary } from "./policy.js";
@@ -189,15 +190,13 @@ export interface PickPayload {
   sku: string;
   cache: CacheSummary;
   policy: PolicySummary;
-  picked:
-    | {
-        region: string;
-        displayName: string;
-        geographyGroup: string | null;
-        free: number | null;
-        limit: number | null;
-      }
-    | null;
+  picked: {
+    region: string;
+    displayName: string;
+    geographyGroup: string | null;
+    free: number | null;
+    limit: number | null;
+  } | null;
 }
 
 export function buildPickPayload(
@@ -235,15 +234,13 @@ export interface SuggestPayload {
   elapsedMs: number;
   cache: CacheSummary;
   policy: PolicySummary;
-  suggested:
-    | {
-        region: string;
-        displayName: string;
-        reason: string;
-        score: number;
-        factors: Suggestion["factors"];
-      }
-    | null;
+  suggested: {
+    region: string;
+    displayName: string;
+    reason: string;
+    score: number;
+    factors: Suggestion["factors"];
+  } | null;
 }
 
 export function buildSuggestPayload(input: {
@@ -274,6 +271,57 @@ export function buildSuggestPayload(input: {
           factors: input.suggestion.factors,
         }
       : null,
+  };
+}
+
+/**
+ * `azw compare resource` matrix payload, mirroring the VM compare shape
+ * (0.4.5) with `targets` instead of `skus` and `availability` confidence.
+ * Every per-target row carries the pinned resource verdict rows; the VM
+ * compare payload is untouched. Since 0.4.9.
+ */
+export interface CompareResourcePayload {
+  schemaVersion: 1;
+  kind: "compare";
+  resourceKind: "resource";
+  confidence: "availability";
+  targets: string[];
+  /** Region axis shared by every per-target result below, in the same order. */
+  regions: string[];
+  geography: string | null;
+  region: string | null;
+  scannedAt: string;
+  elapsedMs: number;
+  cache: CacheSummary;
+  policy: PolicySummary;
+  results: CompareResourceSummary[];
+}
+
+export function buildCompareResourcePayload(input: {
+  targets: string[];
+  regions: string[];
+  geography: string | null;
+  region: string | null;
+  scannedAt: string;
+  elapsedMs: number;
+  cache: CacheSummary;
+  policy: PolicySummary;
+  results: CompareResourceSummary[];
+}): CompareResourcePayload {
+  return {
+    schemaVersion: 1,
+    kind: "compare",
+    resourceKind: "resource",
+    confidence: "availability",
+    targets: input.targets,
+    regions: input.regions,
+    geography: input.geography,
+    region: input.region,
+    scannedAt: input.scannedAt,
+    elapsedMs: input.elapsedMs,
+    cache: input.cache,
+    policy: input.policy,
+    results: input.results,
   };
 }
 

@@ -4,18 +4,22 @@ import {
   buildAvailabilityVmPayload,
   buildCheckResourcePayload,
   buildCheckVmPayload,
+  buildCompareResourcePayload,
   buildPickPayload,
   buildSuggestPayload,
   buildVerifyPayload,
 } from "../../src/core/payloads.js";
+import { classifyCompareResources } from "../../src/core/compareResource.js";
 import type { IacResourcePair, IacSkippedResource } from "../../src/core/iac.js";
 import { POLICY_DISABLED } from "../../src/core/policy.js";
 import { classifyResourceLocation, resolveResourceType } from "../../src/core/resources.js";
-import {
-  baseVerdict,
-  buildQuotaVerdict,
-} from "../../src/core/scan.js";
-import type { AzLocation, RegionVerdict, ResourceAvailabilityVerdict } from "../../src/core/types.js";
+import { baseVerdict, buildQuotaVerdict } from "../../src/core/scan.js";
+import type {
+  AzLocation,
+  AzProvider,
+  RegionVerdict,
+  ResourceAvailabilityVerdict,
+} from "../../src/core/types.js";
 import {
   toVerifyResourceRow,
   toVerifyRow,
@@ -39,12 +43,12 @@ const location: AzLocation = {
 };
 
 // Built through the production builders so key order matches real scans.
-const vmCheckRow: RegionVerdict = buildQuotaVerdict(
-  baseVerdict(location),
-  "standardBSFamily",
-  1,
-  { name: { value: "standardBSFamily", localizedValue: "Standard BS Family" }, currentValue: 4, limit: 10, unit: "Count" },
-);
+const vmCheckRow: RegionVerdict = buildQuotaVerdict(baseVerdict(location), "standardBSFamily", 1, {
+  name: { value: "standardBSFamily", localizedValue: "Standard BS Family" },
+  currentValue: 4,
+  limit: 10,
+  unit: "Count",
+});
 
 const resolved = resolveResourceType("storage-account")!;
 
@@ -90,9 +94,9 @@ describe("check payload contracts", () => {
     const payload = buildCheckVmPayload("Standard_B1s", vmCheckRow, cache, POLICY_DISABLED);
     expect(payload.explanation.code).toBe(payload.verdict);
     expect(typeof payload.explanation.reason).toBe("string");
-    expect(
-      payload.explanation.hint === null || typeof payload.explanation.hint === "string",
-    ).toBe(true);
+    expect(payload.explanation.hint === null || typeof payload.explanation.hint === "string").toBe(
+      true,
+    );
   });
 
   it("check vm pins the RegionVerdict row fields in order", () => {
@@ -314,6 +318,111 @@ describe("pick and suggest payload contracts", () => {
       suggestion: null,
     });
     expect(failure.suggested).toBeNull();
+  });
+});
+
+describe("compare resource payload contract (since 0.4.9)", () => {
+  const north: AzLocation = {
+    name: "northeurope",
+    displayName: "North Europe",
+    regionalDisplayName: "(Europe) North Europe",
+    metadata: { geographyGroup: "Europe", physicalLocation: "Ireland" },
+  };
+  const providers: AzProvider[] = [
+    {
+      namespace: "Microsoft.Storage",
+      registrationState: "Registered",
+      resourceTypes: [{ resourceType: "storageAccounts", locations: ["West Europe"] }],
+    },
+    {
+      namespace: "Microsoft.KeyVault",
+      registrationState: "Registered",
+      resourceTypes: [{ resourceType: "vaults", locations: ["West Europe", "North Europe"] }],
+    },
+  ];
+  // Built through the production classifier so rows match real scans.
+  const { summaries } = classifyCompareResources({
+    targets: ["storage-account", "key-vault"],
+    locations: [location, north],
+    providers,
+  });
+
+  function payload() {
+    return buildCompareResourcePayload({
+      targets: ["storage-account", "key-vault"],
+      regions: ["northeurope", "westeurope"],
+      geography: "Europe",
+      region: null,
+      scannedAt: "2026-10-18T00:00:00.000Z",
+      elapsedMs: 3800,
+      cache,
+      policy: POLICY_DISABLED,
+      results: summaries,
+    });
+  }
+
+  it("pins the documented top-level fields in order", () => {
+    const built = payload();
+    expect(Object.keys(built)).toEqual([
+      "schemaVersion",
+      "kind",
+      "resourceKind",
+      "confidence",
+      "targets",
+      "regions",
+      "geography",
+      "region",
+      "scannedAt",
+      "elapsedMs",
+      "cache",
+      "policy",
+      "results",
+    ]);
+    expect(built.kind).toBe("compare");
+    expect(built.resourceKind).toBe("resource");
+    expect(built.confidence).toBe("availability");
+  });
+
+  it("pins the per-target result fields in order, rows aligned to the shared axis", () => {
+    const built = payload();
+    expect(built.results.map((r) => r.target)).toEqual(built.targets);
+    for (const result of built.results) {
+      expect(Object.keys(result)).toEqual([
+        "target",
+        "resolved",
+        "regions",
+        "supportedRegions",
+        "supportedCount",
+        "verdictCounts",
+      ]);
+      expect(Object.keys(result.resolved)).toEqual([
+        "input",
+        "resourceType",
+        "alias",
+        "namespace",
+        "typePath",
+      ]);
+      expect(result.regions.map((r) => r.region)).toEqual(built.regions);
+      expect(result.supportedCount).toBe(result.supportedRegions.length);
+      expect(result.regions.every((r) => r.confidence === "availability")).toBe(true);
+      // The embedded rows keep the pinned ResourceAvailabilityVerdict field order.
+      expect(Object.keys(result.regions[0]!)).toEqual([
+        "kind",
+        "target",
+        "resourceType",
+        "region",
+        "displayName",
+        "geographyGroup",
+        "physicalLocation",
+        "policyAllowed",
+        "policyReason",
+        "confidence",
+        "verdict",
+        "providerRegistered",
+        "typeLocationCount",
+        "notSupportedCause",
+      ]);
+    }
   });
 });
 

@@ -45,7 +45,7 @@ The canonical grammar should be used for new docs and new resource kinds, while 
 | `where.ts` | `azw where` - current Azure subscription and user |
 | `availability.ts` | `azw availability vm <sku>` / `azw availability resource <target>` - canonical availability scans |
 | `check.ts` | `azw check vm <sku>` / `azw check resource <target>` - one-region verdicts with a reason |
-| `compare.ts` | `azw compare vm <sku-list>` - region × size deployability matrix |
+| `compare.ts` | `azw compare vm <sku-list>` / `azw compare resource <target-list>` - region × size deployability and region × type availability matrices |
 | `verify.ts` | `azw verify <files...>` - IaC preflight for VM location+size pairs and generic resource locations |
 | `regions.ts` | `azw regions <sku>` - full availability table |
 | `pick.ts` | `azw pick <sku>` - one region name for scripts |

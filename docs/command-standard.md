@@ -66,6 +66,7 @@ azw availability vm B1s --eu
 azw pick vm B1s --eu
 azw suggest vm B1s --eu --near Luxembourg
 azw compare vm B1s,B2s,D2s_v5 --eu
+azw compare resource storage-account,key-vault --eu
 
 azw check resource storage-account --region westeurope
 azw availability resource storage-account --eu
@@ -88,7 +89,7 @@ Keep the verb list small.
 
 Do not add new verbs unless an existing verb cannot describe the user intent.
 
-`compare` ships as VM-only (`azw compare vm <sku-list> [scope]`, 0.4.5). It supports `table`, `json`, and `compact`; `value` and `name` are rejected as validation errors because a comparison of several targets has no single script value or one-name-per-line meaning. Resource comparison (`azw compare resource <targets> [scope]`) is planned for 0.4.9 — the deferral "until generic resource verdicts mature" ended with the 0.4.8 generic verdict work.
+`compare` covers VM sizes (`azw compare vm <sku-list> [scope]`, 0.4.5) and generic resource types (`azw compare resource <targets> [scope]`, 0.4.9 — the resource matrix emits availability verdicts and confidence on every row, never deployability). It supports `table`, `json`, and `compact`; `value` and `name` are rejected as validation errors because a comparison of several targets has no single script value or one-name-per-line meaning.
 
 `verify` (`azw verify <files...>`) takes one or more `.tf` / `.bicep` file paths — no scope flags, because the regions come from the files. It parses statically-literal pairs and checks them before deployment:
 
@@ -333,7 +334,7 @@ Confidence values:
 | `azw pick vm <sku> [scope]` | Script-first VM region picker |
 | `azw suggest vm <sku> [scope]` | Human VM recommendation |
 | `azw compare vm <sku-list> [scope]` | Matrix across VM sizes and regions |
-| `azw compare resource <target-list> [scope]` | Matrix across generic resource types and regions (0.4.9) |
+| `azw compare resource <target-list> [scope]` | Matrix across generic resource types and regions |
 | `azw availability resource <alias-or-type> [scope]` | Generic resource availability scan |
 | `azw check resource <alias-or-type> --region <name>` | One-region generic resource availability check |
 

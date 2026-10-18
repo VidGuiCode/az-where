@@ -164,17 +164,17 @@ Planned improvements and features for upcoming releases. This is a living docume
 - Exit `1` when a checked VM pair is blocked or a generic resource is not advertised / policy-denied in its region; skips still never fail the run.
 - CI workflows bumped to `actions/checkout@v5` and `actions/setup-node@v5` ahead of `ubuntu-latest` moving to Ubuntu 26 (2026-10-19).
 
-## Planned
-
-### 0.4.9 - Resource Comparison (planned)
+### 0.4.9 - Resource Comparison
 
 - `azw compare resource storage-account,key-vault,aks --eu`: a region × type matrix of generic resource availability verdicts, mirroring `compare vm` (0.4.5) with the resource vocabulary (`RESOURCE_SUPPORTED` / `RESOURCE_NOT_SUPPORTED` / `POLICY_DENIED`) and `availability` confidence on every row — never deployability.
-- Accepts the same friendly aliases and raw Azure resource types as `availability resource`; targets are validated, deduplicated (case-insensitive), and capped (30 per invocation, like `compare vm`) before any Azure call.
+- Accepts the same friendly aliases and raw Azure resource types as `availability resource`; targets are validated, deduplicated (case-insensitive on the resolved type), and capped (30 per invocation, like `compare vm`) before any Azure call.
 - Reuses the provider-catalog engine split out in 0.4.8 (`classifyResourceType` + `listProviderCatalog` in `src/core/resources.ts`): one shared catalog call per run, so comparing N types costs the same as one `check resource` scan. No `--concurrency` flag — there is nothing to parallelize.
-- Stable JSON contract (`kind: "compare"`, `resourceKind: "resource"`, `confidence: "availability"`, additive at `schemaVersion: 1`): a shared `regions` axis plus one `results[]` entry per target in request order carrying `target`, `resolved` (`{input, resourceType, alias, namespace, typePath}`), per-region cells, `supportedRegions`, `supportedCount`, and `verdictCounts`. The VM compare payload is untouched.
-- Human table ranks regions where every requested type is supported first, with a legend and a per-type `supported in X/Y regions` summary; `value` and `name` are rejected as validation errors before any Azure call.
+- Stable JSON contract (`kind: "compare"`, `resourceKind: "resource"`, `confidence: "availability"`, additive at `schemaVersion: 1`): a shared `regions` axis plus one `results[]` entry per target in request order carrying `target`, `resolved` (`{input, resourceType, alias, namespace, typePath}`), per-region rows, `supportedRegions`, `supportedCount`, and `verdictCounts`. The VM compare payload is untouched.
+- Human table ranks regions where every requested type is supported first, with a legend (including the availability-not-deployability caveat) and a per-type `supported in X/Y regions` summary; `value` and `name` are rejected as validation errors before any Azure call.
 - Scope flags match `availability resource` (`--region`, `--eu`, `--us`, `--asia`, `--geography`, `--no-policy`, `--refresh`).
 - Exit `1` when no requested type is supported in any region.
+
+## Planned
 
 ### Later
 
