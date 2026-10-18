@@ -176,6 +176,16 @@ Planned improvements and features for upcoming releases. This is a living docume
 
 ## Planned
 
+### 0.4.10 - Resource Pick And Suggest (planned)
+
+- `azw pick resource storage-account,key-vault --eu`: one script-value region where **every** requested type is `RESOURCE_SUPPORTED` (a single target degenerates to the simple case). Targets reuse `parseResourceTargetList` from compare resource (validated, deduplicated case-insensitively, capped at 30) and the same one-catalog-call engine (`classifyCompareResources`); no `--concurrency`.
+- Selection mirrors `pick vm`: first region in the stable geography-group-then-name axis where all types are supported (the compare-resource equivalent of `allSupportedRegions(...)[0]`). Default human output is the bare region name, like `pick vm`; `-o value` is allowed (same bare name), `-o name` is rejected; on failure `-o json` prints the payload with `picked: null` and exit `1`, and the human path explains the closest miss (the requested type supported in the fewest scanned regions).
+- `azw suggest resource storage-account,key-vault --eu [--near <city>]`: one human recommendation with a reason. Scoring has no quota signal, so it is proximity-based: `--near` ranks supported regions by haversine distance via the existing `PLACES` table (score `-distanceKm`), otherwise all candidates tie at 0 and region order wins. The reason always states that all N requested types are advertised there and carries the availability-not-deployability caveat; `factors` carries `distanceKm` (with `--near`) and `geographyGroup` only — no `free`/`limit` (absent by contract on resource rows).
+- Grammar dispatch: `azw pick resource <targets>` / `azw suggest resource <targets>` route through the existing positional dispatchers (`resolveVmTarget` gains a `resource` branch); the `azw pick <sku>` / `azw suggest <sku>` VM shortcuts are untouched, and no new shortcut grammar is added for resources.
+- Stable JSON contracts (additive at `schemaVersion: 1`, built via `src/core/payloads.ts`): pick resource carries `kind: "pick"`, `resourceKind: "resource"`, `confidence: "availability"`, `targets`, `resolved[]` (one per target), `cache`, `policy`, and `picked: {region, displayName, geographyGroup} | null`; suggest resource carries `kind: "suggest"`, the same envelope fields plus `geography`, `near`, `elapsedMs`, and `suggested: {region, displayName, reason, score, factors} | null`. The VM pick/suggest payloads are untouched.
+- Scope flags match `pick vm` / `suggest vm` (`--eu`, `--us`, `--asia`, `--geography`, `--no-policy`, `--refresh`, plus `--near` on suggest). No `--region`: scoping to one region is `check resource`'s job.
+- Exit codes: `0` on success, `1` when no region in scope advertises every requested type (payload still printed in JSON modes), `3` validation.
+
 ### Later
 
 - Deep service-specific checks beyond VMs, only after API research confirms reliable signals:
