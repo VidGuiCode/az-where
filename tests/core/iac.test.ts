@@ -620,3 +620,147 @@ describe("parseBicep generic resources", () => {
     expect(result.genericResourceCount).toBe(2);
   });
 });
+
+describe("Storage account preflight parsing", () => {
+  it("joins the Terraform account tier and replication type and retains the generic pair", () => {
+    const result = parseTf(`# storage configuration
+resource "azurerm_storage_account" "stg" {
+  location = "West Europe"
+  account_kind = "BlockBlobStorage"
+  account_tier = "Premium"
+  account_replication_type = "ZRS"
+}
+`);
+    expect(result.storageResourceCount).toBe(1);
+    expect(result.storageSkipped).toEqual([]);
+    expect(result.storagePairs).toEqual([{
+      file: "main.tf",
+      line: 2,
+      format: "terraform",
+      resourceType: "azurerm_storage_account",
+      resourceName: "stg",
+      locationLiteral: "West Europe",
+      accountKind: "BlockBlobStorage",
+      sku: "Premium_ZRS",
+    }]);
+    expect(result.genericResourceCount).toBe(1);
+    expect(result.resourcePairs[0]).toMatchObject({ resourceName: "stg", locationLiteral: "West Europe" });
+  });
+
+  it.each([
+    ['location = var.region', 'account_kind = "StorageV2"', 'account_replication_type = "LRS"', 'dynamic-location', 'var.region'],
+    ['location = "westus"', 'account_kind = var.kind', 'account_replication_type = "LRS"', 'dynamic-kind', 'var.kind'],
+    ['location = "westus"', '', 'account_replication_type = "LRS"', 'dynamic-kind', 'no account_kind attribute found'],
+    ['location = "westus"', 'account_kind = "StorageV2"', 'account_replication_type = var.replication', 'dynamic-sku', 'var.replication'],
+    ['location = "westus"', 'account_kind = "StorageV2"', '', 'dynamic-sku', 'no account_replication_type attribute found'],
+  ])("reports a dynamic or incomplete Terraform field", (location, kind, replication, reason, detail) => {
+    const result = parseTf(`resource "azurerm_storage_account" "stg" {
+  ${location}
+  ${kind}
+  account_tier = "Standard"
+  ${replication}
+  tags = {
+    account_kind = "StorageV2"
+    account_replication_type = "LRS"
+  }
+}`);
+    expect(result.storageResourceCount).toBe(1);
+    expect(result.storagePairs).toEqual([]);
+    expect(result.storageSkipped).toEqual([{
+      file: "main.tf",
+      line: 1,
+      format: "terraform",
+      resourceType: "azurerm_storage_account",
+      resourceName: "stg",
+      reason,
+      detail,
+    }]);
+  });
+
+  it("reads literal Bicep fields inside conditional collections and ignores existing accounts", () => {
+    const result = parseBicep(`resource existingStg 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+  name: 'existingStg'
+}
+
+resource stg 'Microsoft.Storage/storageAccounts@2023-05-01' = [for i in range(0, 1): if (enabled[i]) {
+  name: 'newstg\${i}'
+  'location': 'West Europe'
+  'kind': 'StorageV2'
+  sku: { 'name': 'Standard_ZRS', tier: 'Standard' }
+}]
+`);
+    expect(result.storageResourceCount).toBe(1);
+    expect(result.storageSkipped).toEqual([]);
+    expect(result.storagePairs).toEqual([{
+      file: "main.bicep",
+      line: 5,
+      format: "bicep",
+      resourceType: "Microsoft.Storage/storageAccounts",
+      resourceName: "stg",
+      locationLiteral: "West Europe",
+      accountKind: "StorageV2",
+      sku: "Standard_ZRS",
+    }]);
+  });
+
+  it("does not confuse a literal prefix before a block comment with a literal value", () => {
+    const terraform = parseTf(`resource "azurerm_storage_account" "stg" {
+  location = "westus"
+  account_tier = "Standard"
+  account_replication_type = "LRS"
+  account_kind = "StorageV2" /* choice */ == var.preferred_kind ? var.preferred_kind : "Storage"
+}`);
+    const bicep = parseBicep(`resource stg 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  location: 'westus'
+  sku: { name: 'Standard_LRS' }
+  kind: 'StorageV2' /* choice */ == preferredKind ? preferredKind : 'Storage'
+}`);
+    for (const parsed of [terraform, bicep]) {
+      expect(parsed.storagePairs).toEqual([]);
+      expect(parsed.storageSkipped[0]).toMatchObject({ reason: "dynamic-kind" });
+    }
+  });
+
+  it("ignores resource-shaped text inside Bicep multiline strings", () => {
+    const result = parseBicep(`var heading = '''example'''
+var example = '''
+resource fake 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  location: 'westus'
+  kind: 'StorageV2'
+  sku: { name: 'Standard_LRS' }
+}
+'''
+resource real 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  location: 'westus'
+  kind: 'StorageV2'
+  sku: { name: 'Standard_LRS' }
+}
+`);
+    expect(result.storageResourceCount).toBe(1);
+    expect(result.storagePairs[0]).toMatchObject({ resourceName: "real", line: 9 });
+  });
+
+  it.each([
+    ["location: resourceGroup().location", "kind: 'StorageV2'", "sku: { name: 'Standard_LRS' }", "dynamic-location", "resourceGroup().location"],
+    ["location: 'westus'", "kind: storageKind", "sku: { name: 'Standard_LRS' }", "dynamic-kind", "storageKind"],
+    ["location: 'westus'", "", "sku: { name: 'Standard_LRS' }", "dynamic-kind", "no kind attribute found"],
+    ["location: 'westus'", "kind: 'StorageV2'", "sku: storageSku", "dynamic-sku", "storageSku"],
+    ["location: 'westus'", "kind: 'StorageV2'", "sku: 'Standard_LRS'", "dynamic-sku", "'Standard_LRS'"],
+    ["location: 'westus'", "kind: 'StorageV2'", "sku: { name: preference ? 'Standard_LRS' : 'Standard_ZRS' }", "dynamic-sku", "preference ? 'Standard_LRS' : 'Standard_ZRS'"],
+    ["location: 'westus'", "kind: 'StorageV2'", "sku: { name: 'Standard_LRS', ...overrideSku }", "dynamic-sku", "...overrideSku"],
+    ["location: 'westus'", "kind: 'StorageV2'", "sku: { other: { name: 'Standard_LRS' } }", "dynamic-sku", "no sku.name attribute found"],
+  ])("reports a dynamic or incomplete Bicep field", (location, kind, sku, reason, detail) => {
+    const result = parseBicep(`resource stg 'Microsoft.Storage/storageAccounts@2023-05-01' = if (enabled[0]) {
+  ${location}
+  ${kind}
+  ${sku}
+  properties: {
+    kind: 'StorageV2'
+    sku: { name: 'Standard_LRS' }
+  }
+}`);
+    expect(result.storageResourceCount).toBe(1);
+    expect(result.storagePairs).toEqual([]);
+    expect(result.storageSkipped[0]).toMatchObject({ resourceName: "stg", reason, detail });
+  });
+});

@@ -355,7 +355,7 @@ Region × type matrix of generic resource availability verdicts, mirroring `comp
 
 ### `azw verify <files...> -o json` (since 0.4.7)
 
-IaC preflight: one `results[]` row per statically-known `location + size` pair parsed from Terraform/Bicep files, plus a `skipped[]` list of VM resources that could not be checked. Since 0.4.8, generic `type + location` pairs (storage accounts, key vaults, web/function apps, service plans, AKS, PostgreSQL flexible servers, …) are checked in a separate `genericResources` section.
+IaC preflight: one `results[]` row per statically-known `location + size` pair parsed from Terraform/Bicep files, plus a `skipped[]` list of VM resources that could not be checked. Since 0.4.8, generic `type + location` pairs (storage accounts, key vaults, web/function apps, service plans, AKS, PostgreSQL flexible servers, …) are checked in a separate `genericResources` section. Since 0.5.3, recognized Storage accounts also receive findings in `storageAccounts`.
 
 ```json
 {
@@ -433,8 +433,18 @@ IaC preflight: one `results[]` row per statically-known `location + size` pair p
 - `capacity` is a literal scale-set instance count (quota checks multiply the vCPU need by it); `1` for single VMs, `null` when the capacity expression is dynamic (treated as a single instance).
 - `skipped[].reason` is a finding, not a verdict: `dynamic-location`, `dynamic-sku`, or `unknown-region` (the literal matched no ARM region). `detail` echoes the raw expression or literal.
 - `genericResources` **(since 0.4.8)** keeps the VM `summary` / `results` / `skipped` fields meaning exactly what they meant in 0.4.7: generic findings never mix into them. `genericResources.results[]` rows carry `resourceType` (the ARM type checked), `sourceType` (the type as written in the file), and the pinned resource row as `checks` — every row carries `confidence: "availability"` and never claims deployability. The top-level `confidence: "deployability"` describes `results` (VM rows) only. `genericResources` is always present, with zeros and empty arrays when no mapped generic types were found.
-- Exit `1` only when a checked pair is blocked — a blocked VM pair, or a generic resource that is `RESOURCE_NOT_SUPPORTED` or `POLICY_DENIED` in its region; skipped resources never fail the run. Zero checkable pairs exits `0` — the payload states `checked: 0`.
+- A completed preflight exits `1` for a blocked VM, a generic verdict of `RESOURCE_NOT_SUPPORTED` or `POLICY_DENIED`, or a Storage verdict other than `STORAGE_SKU_ADVERTISED`. Skips never fail the run. A completed preflight with no checked rows exits `0`. A failed Storage catalog request uses the standard error envelope and error exit code.
 - `--output value` and `--output name` are rejected as validation errors before any Azure call.
+
+#### Storage account findings
+
+`storageAccounts` appears when the files contain a recognized Storage account declaration. It has numeric `seen`, `checked`, `skipped`, and `advertisedCount` fields, a `verdictCounts` map containing all five Storage verdicts, and `results` and `skippedFindings` arrays. The same declaration still contributes its generic location finding to `genericResources`.
+
+`verify` loads the subscription's Storage SKU catalog once when at least one matched Storage region passes the allowed-location policy check. Skipped and policy-denied findings require no Storage catalog read.
+
+Each `storageAccounts.results[]` row includes `file`, `line`, `format`, `resourceType` (the source type with the Bicep API version omitted), `resourceName`, `accountKind`, `sku`, and `region` (the matched ARM region name). The row also carries `verdict`, `confidence: "availability"`, `evidence` (`listed` and `restrictionReasons`), and `explanation` (`code`, `reason`, and `hint`). Their values follow the [Storage check contract](#storage-check). The top-level `policy` describes the allowed-location evaluation used for all findings.
+
+Each `storageAccounts.skippedFindings[]` entry contains `file`, `line`, `format`, `resourceType`, `resourceName`, `reason`, and `detail`. Reasons are `dynamic-location`, `dynamic-kind`, `dynamic-sku`, or `unknown-region`. The first three also cover missing inputs. `detail` identifies the input that could not be resolved.
 
 ## Error Envelope
 

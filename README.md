@@ -131,9 +131,11 @@ azw verify main.tf vm.tf
 azw verify main.bicep -o json
 ```
 
-`verify` reads the supplied files. It checks literal VM location and size pairs, including scale sets, and looks up advertised locations for common resources such as storage accounts, key vaults, web and function apps, service plans, AKS, and PostgreSQL flexible servers.
+`verify` checks literal VM locations and sizes, including scale sets, and looks up advertised locations for common resource types such as Storage accounts, Key Vault, web and function apps, service plans, AKS, and PostgreSQL flexible servers.
 
-A blocked check exits with code `1`. Dynamic values and unknown region literals are listed as skipped with their file and line. Review skips before using the result as a CI gate.
+Storage accounts also get a subscription-scoped SKU check when all required values are literal. In Terraform, set `location`, `account_kind`, `account_tier`, and `account_replication_type`. For example, `Standard` and `ZRS` form `Standard_ZRS`. In Bicep, set `location`, `kind`, and `sku.name`. The check uses the same Storage catalog and allowed-location policy rules as `azw check storage`. Its confidence is availability. Account quota and live capacity are outside the check.
+
+`verify` exits `1` for a blocked VM or generic resource check, or when a checked Storage configuration is restricted, unlisted, inconclusive, or denied by policy. Dynamic or missing values and unknown region literals appear as skips with their file and line. Skips alone exit `0`. In JSON, `storageAccounts` appears when the files include recognized Storage accounts. [Preflight JSON contract](docs/json-contracts.md#azw-verify-files--o-json-since-047)
 
 ## Use in scripts
 

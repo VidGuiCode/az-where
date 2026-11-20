@@ -8,7 +8,8 @@ import { normalizeSku } from "./sku.js";
  * `location + size` pairs from Terraform (.tf) and Bicep (.bicep) files so
  * each pair can run through the same deployability engine as `azw check vm`,
  * plus generic `type + location` pairs (since 0.4.8) that run through the
- * provider-catalog availability engine of `azw check resource`.
+ * provider-catalog availability engine of `azw check resource`. Storage
+ * accounts also produce a location + kind + SKU finding (since 0.5.3).
  *
  * This is deliberately NOT a language toolchain:
  * - Only literal string/number values are resolved. Anything dynamic
@@ -126,6 +127,23 @@ export interface IacResourcePair {
   locationLiteral: string;
 }
 
+type IacResourceSource = Pick<
+  IacResourcePair,
+  "file" | "line" | "format" | "resourceType" | "resourceName"
+>;
+
+/** A Storage account whose location, account kind, and SKU are literals. */
+export interface IacStoragePair extends IacResourceSource {
+  locationLiteral: string;
+  accountKind: string;
+  sku: string;
+}
+
+export interface IacSkippedStorageResource extends IacResourceSource {
+  reason: IacSkipReason | "dynamic-kind";
+  detail: string;
+}
+
 export interface IacFileParseResult {
   file: string;
   format: IacFormat;
@@ -135,11 +153,21 @@ export interface IacFileParseResult {
   skipped: IacSkippedResource[];
   /** Generic resource skips, kept separate from VM findings. Since 0.4.8. */
   resourceSkipped: IacSkippedResource[];
+  storagePairs: IacStoragePair[];
+  storageSkipped: IacSkippedStorageResource[];
   /** VM + scale-set resources seen, checkable or skipped. */
   vmResourceCount: number;
   /** Generic resources seen (mapped types only), checkable or skipped. Since 0.4.8. */
   genericResourceCount: number;
+  /** Storage accounts seen, including those in the generic resource counts. */
+  storageResourceCount: number;
 }
+
+type StorageParseResult = Pick<
+  IacFileParseResult,
+  "storagePairs" | "storageSkipped" | "storageResourceCount"
+>;
+type LegacyParseResult = Omit<IacFileParseResult, "file" | "format" | keyof StorageParseResult>;
 
 /** Validate one CLI-given path by extension. Throws ValidationError. */
 export function detectIacFormat(filePath: string): IacFormat {
@@ -196,6 +224,7 @@ export function parseIacContent(
     resourceSkipped: parsed.resourceSkipped.map((s) => ({ ...s, file })),
     vmResourceCount: parsed.vmResourceCount,
     genericResourceCount: parsed.genericResourceCount,
+    ...parseStorageAccounts(file, format, normalized),
   };
 }
 
@@ -315,6 +344,54 @@ function classifyGenericResource(
   };
 }
 
+function classifyStorageResource(
+  source: IacResourceSource,
+  properties: Map<string, string>,
+  skuFields: Array<[string, AttrFinding]>,
+): IacStoragePair | IacSkippedStorageResource {
+  const location = storageLiteral(storageProperty(properties, "location"), source.format);
+  if (location.literal === null) {
+    return {
+      ...source,
+      reason: "dynamic-location",
+      detail: location.raw ?? "no location attribute found",
+    };
+  }
+
+  const kindField = source.format === "terraform" ? "account_kind" : "kind";
+  const kind = storageLiteral(storageProperty(properties, kindField), source.format);
+  if (kind.literal === null) {
+    return {
+      ...source,
+      reason: "dynamic-kind",
+      detail: kind.raw ?? `no ${kindField} attribute found`,
+    };
+  }
+
+  const skuParts: string[] = [];
+  for (const [name, sku] of skuFields) {
+    if (sku.literal === null) {
+      return { ...source, reason: "dynamic-sku", detail: sku.raw ?? `no ${name} attribute found` };
+    }
+    skuParts.push(sku.literal);
+  }
+
+  return {
+    ...source,
+    locationLiteral: location.literal,
+    accountKind: kind.literal,
+    sku: skuParts.join("_"),
+  };
+}
+
+function storageLiteral(raw: string | undefined, format: IacFormat): AttrFinding {
+  if (raw === undefined) return ATTR_MISSING;
+  const pattern = format === "terraform" ? /^"([^"\\]+)"$/ : /^'([^'\\]+)'$/;
+  const literal = raw.match(pattern)?.[1].trim();
+  const dynamic = raw.includes("${") || (format === "terraform" && raw.includes("%{"));
+  return { literal: literal && !dynamic ? literal : null, raw };
+}
+
 /* ── Delimited-block extraction (quote-aware brace matching) ───────────── */
 
 interface BlockSpan {
@@ -322,9 +399,10 @@ interface BlockSpan {
   bodyLines: string[];
   /** Index of the line holding the closing delimiter. */
   endLine: number;
+  endCol: number;
 }
 
-const CLOSER_OF: Record<string, string> = { "{": "}", "[": "]" };
+const CLOSER_OF: Record<string, string> = { "{": "}", "[": "]", "(": ")" };
 
 /** Skip a quoted span starting at `start`; returns the index after its quote. */
 function skipQuoted(line: string, start: number): number {
@@ -417,7 +495,7 @@ function extractDelimited(
   }
 
   if (partial.length > 0) bodyLines.push(partial);
-  return { bodyLines, endLine: done ? line : lines.length - 1 };
+  return { bodyLines, endLine: done ? line : lines.length - 1, endCol: col };
 }
 
 /** Find a nested sub-block (`sku { … }` / `sku: { … }`) and return its body. */
@@ -436,9 +514,104 @@ function findSubBlock(
   return null;
 }
 
+/** Yield separators outside quoted strings and nested expressions. */
+function* topLevelSeparators(text: string, separators: string): Generator<number> {
+  const closers: string[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"' || ch === "'") {
+      i = skipQuoted(text, i) - 1;
+    } else if (closers.length === 0 && separators.includes(ch)) {
+      yield i;
+    } else if (Object.hasOwn(CLOSER_OF, ch)) {
+      closers.push(CLOSER_OF[ch]);
+    } else if (ch === closers.at(-1)) {
+      closers.pop();
+    }
+  }
+}
+
+/** Read only the resource's own properties, leaving nested values as expressions. */
+function storageProperties(body: string, format: IacFormat): Map<string, string> {
+  const properties = new Map<string, string>();
+  const separators = format === "terraform" ? "\n" : "\n,";
+  const assignment =
+    format === "terraform" ? /^(\w+)\s*=\s*([\s\S]*)$/ : /^(\w+|'\w+')\s*:\s*([\s\S]*)$/;
+  let start = 0;
+  for (const end of topLevelSeparators(body + "\n", separators)) {
+    const entry = body.slice(start, end).trim();
+    if (format === "bicep" && entry.startsWith("...")) {
+      // A spread can replace any earlier field with a dynamic value.
+      properties.clear();
+      properties.set("...", entry);
+    }
+    const match = entry.match(assignment);
+    if (match) properties.set(match[1].replaceAll("'", ""), match[2].trim());
+    start = end + 1;
+  }
+  return properties;
+}
+
+function storageProperty(properties: Map<string, string>, name: string): string | undefined {
+  return properties.get(name) ?? properties.get("...");
+}
+
+/** Storage uses its own view of literals and comments to preserve legacy findings. */
+function parseStorageAccounts(
+  file: string,
+  format: IacFormat,
+  content: string,
+): StorageParseResult {
+  const storagePairs: IacStoragePair[] = [];
+  const storageSkipped: IacSkippedStorageResource[] = [];
+  const terraform = format === "terraform";
+  const expectedType = terraform ? "azurerm_storage_account" : RESOURCE_ALIASES["storage-account"];
+  const headerPattern = terraform ? TERRAFORM_RESOURCE_HEADER : BICEP_RESOURCE_HEADER;
+  const stripNoise = terraform ? stripTerraformNoise : stripBicepNoise;
+  const lines = content.includes(expectedType) ? stripNoise(content, true) : [];
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index].trimStart();
+    const header = line.match(headerPattern);
+    if (!header || header[3] !== undefined) continue;
+    const resourceType = terraform ? header[1] : header[2].split("@")[0];
+    if (resourceType !== expectedType) continue;
+
+    const resourceName = terraform ? header[2] : header[1];
+    const source = { file, line: index + 1, format, resourceType, resourceName };
+    const headerEnd = lines[index].length - line.length + header[0].length;
+    let body: string;
+    if (terraform) {
+      const span = extractDelimited(lines, index, headerEnd - 1, "{", '"');
+      body = span?.bodyLines.join("\n") ?? "";
+      index = span?.endLine ?? index;
+    } else {
+      body = bicepStorageBody(lines, index, headerEnd);
+    }
+    const properties = storageProperties(body, format);
+    const skuFields: Array<[string, AttrFinding]> = terraform
+      ? ["account_tier", "account_replication_type"].map((field) => [
+          field,
+          storageLiteral(properties.get(field), format),
+        ])
+      : [bicepStorageSkuField(storageProperty(properties, "sku"))];
+    const finding = classifyStorageResource(source, properties, skuFields);
+    if ("reason" in finding) storageSkipped.push(finding);
+    else storagePairs.push(finding);
+  }
+
+  return {
+    storagePairs,
+    storageSkipped,
+    storageResourceCount: storagePairs.length + storageSkipped.length,
+  };
+}
+
 /* ── Terraform (.tf) ───────────────────────────────────────────────────── */
 
-function parseTerraform(content: string): Omit<IacFileParseResult, "file" | "format"> {
+const TERRAFORM_RESOURCE_HEADER = /^resource\s+"([^"]+)"\s+"([^"]+)"\s*\{/;
+
+function parseTerraform(content: string): LegacyParseResult {
   const lines = stripTerraformNoise(content);
   const pairs: IacVmPair[] = [];
   const resourcePairs: IacResourcePair[] = [];
@@ -450,7 +623,7 @@ function parseTerraform(content: string): Omit<IacFileParseResult, "file" | "for
 
   while (i < lines.length) {
     const lead = lines[i].length - lines[i].trimStart().length;
-    const header = lines[i].slice(lead).match(/^resource\s+"([^"]+)"\s+"([^"]+)"\s*\{/);
+    const header = lines[i].slice(lead).match(TERRAFORM_RESOURCE_HEADER);
     if (!header) {
       i++;
       continue;
@@ -521,7 +694,7 @@ function parseTerraform(content: string): Omit<IacFileParseResult, "file" | "for
  * Blank out line, block, and `#` comments plus `<<EOT` heredocs line-by-line,
  * preserving line count and quoted strings (a `#` inside a string is data).
  */
-function stripTerraformNoise(content: string): string[] {
+function stripTerraformNoise(content: string, inlineBlockComments = false): string[] {
   const lines = content.split("\n");
   const out = new Array<string>(lines.length).fill("");
   let inBlockComment = false;
@@ -568,6 +741,12 @@ function stripTerraformNoise(content: string): string[] {
       }
       if (ch === "#" || (ch === "/" && line[j + 1] === "/")) break;
       if (ch === "/" && line[j + 1] === "*") {
+        const end = line.indexOf("*/", j + 2);
+        if (inlineBlockComments && end !== -1) {
+          result += " ";
+          j = end + 2;
+          continue;
+        }
         inBlockComment = true;
         break;
       }
@@ -591,7 +770,51 @@ function stripTerraformNoise(content: string): string[] {
 
 /* ── Bicep (.bicep) ────────────────────────────────────────────────────── */
 
-function parseBicep(content: string): Omit<IacFileParseResult, "file" | "format"> {
+const BICEP_RESOURCE_HEADER = /^resource\s+([A-Za-z_]\w*)\s+'([^']+)'\s*(existing)?\s*=/;
+
+/** Unwrap a resource declaration's optional collection and condition. */
+function bicepStorageBody(lines: string[], line: number, col: number): string {
+  while (line < lines.length) {
+    const value = lines[line].slice(col);
+    const lead = value.length - value.trimStart().length;
+    const expression = value.slice(lead);
+    col += lead;
+    if (expression.startsWith("{")) {
+      return extractDelimited(lines, line, col, "{", "'\"")?.bodyLines.join("\n") ?? "";
+    }
+    if (expression.startsWith("[")) {
+      const collection = extractDelimited(lines, line, col, "[", "'\"")?.bodyLines.join("\n") ?? "";
+      if (!/^\s*for\b/.test(collection)) return "";
+      const separator = topLevelSeparators(collection, ":").next().value;
+      if (separator === undefined) return "";
+      return bicepStorageBody(collection.slice(separator + 1).split("\n"), 0, 0);
+    }
+    const condition = expression.match(/^if\s*\(/);
+    if (condition) {
+      const span = extractDelimited(lines, line, col + condition[0].length - 1, "(", "'\"");
+      if (!span) return "";
+      return bicepStorageBody(lines, span.endLine, span.endCol + 1);
+    }
+    if (expression) return "";
+    line++;
+    col = 0;
+  }
+  return "";
+}
+
+function bicepStorageSkuField(sku: string | undefined): [string, AttrFinding] {
+  if (sku?.startsWith("{")) {
+    const expression = sku.slice(1);
+    const closingBrace = topLevelSeparators(expression, "}").next().value;
+    if (closingBrace === expression.length - 1) {
+      const properties = storageProperties(expression.slice(0, closingBrace), "bicep");
+      return ["sku.name", storageLiteral(storageProperty(properties, "name"), "bicep")];
+    }
+  }
+  return ["sku", { literal: null, raw: sku ?? null }];
+}
+
+function parseBicep(content: string): LegacyParseResult {
   const lines = stripBicepNoise(content);
   const pairs: IacVmPair[] = [];
   const resourcePairs: IacResourcePair[] = [];
@@ -603,9 +826,7 @@ function parseBicep(content: string): Omit<IacFileParseResult, "file" | "format"
 
   while (i < lines.length) {
     const lead = lines[i].length - lines[i].trimStart().length;
-    const header = lines[i]
-      .slice(lead)
-      .match(/^resource\s+([A-Za-z_]\w*)\s+'([^']+)'\s*(existing)?\s*=/);
+    const header = lines[i].slice(lead).match(BICEP_RESOURCE_HEADER);
     if (!header) {
       i++;
       continue;
@@ -674,7 +895,7 @@ function parseBicep(content: string): Omit<IacFileParseResult, "file" | "format"
  * Blank out line and block comments plus `'''` multi-line strings
  * line-by-line, preserving line count and quoted strings.
  */
-function stripBicepNoise(content: string): string[] {
+function stripBicepNoise(content: string, inlineDelimiters = false): string[] {
   const lines = content.split("\n");
   const out = new Array<string>(lines.length).fill("");
   let inBlockComment = false;
@@ -716,6 +937,12 @@ function stripBicepNoise(content: string): string[] {
         continue;
       }
       if (ch === "'" && line.slice(j, j + 3) === "'''") {
+        const end = line.indexOf("'''", j + 3);
+        if (inlineDelimiters && end !== -1) {
+          result += " ";
+          j = end + 3;
+          continue;
+        }
         inTriple = true;
         break;
       }
@@ -727,6 +954,12 @@ function stripBicepNoise(content: string): string[] {
       }
       if (ch === "/" && line[j + 1] === "/") break;
       if (ch === "/" && line[j + 1] === "*") {
+        const end = line.indexOf("*/", j + 2);
+        if (inlineDelimiters && end !== -1) {
+          result += " ";
+          j = end + 2;
+          continue;
+        }
         inBlockComment = true;
         break;
       }

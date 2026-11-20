@@ -2,7 +2,7 @@ import { armList, getToken } from "./arm.js";
 import { compareColumnLabel } from "./compare.js";
 import { c, colorEnabled } from "./color.js";
 import { explainResourceVerdict, explainVmVerdict, type VerdictExplanation } from "./explain.js";
-import type { IacResourcePair, IacSkippedResource, IacVmPair } from "./iac.js";
+import type { IacResourcePair, IacSkippedResource, IacStoragePair, IacVmPair } from "./iac.js";
 import type { PolicyCheck } from "./policy.js";
 import { Progress } from "./progress.js";
 import {
@@ -19,6 +19,7 @@ import {
   buildQuotaVerdict,
 } from "./scan.js";
 import { isSkuBlockedForSubscription, skuVcpus } from "./sku.js";
+import { classifyStorageSku, listStorageSkus, type StorageSkuResult, type StorageVerdict } from "./storage.js";
 import type {
   AzLocation,
   AzProvider,
@@ -36,11 +37,13 @@ import type {
  * Generic `type + location` pairs (since 0.4.8) run through the same
  * provider-catalog availability engine as `azw check resource`, with
  * availability confidence — never deployability.
+ * Storage accounts use the subscription SKU evidence of `azw check storage`.
  *
  * Cost mirrors `compare vm`: VM pairs are grouped by region, so a run makes
  * one cached SKU-catalog call per region plus one live usage call per region
  * that offers at least one requested SKU — O(regions), never O(pairs).
  * Generic pairs share one cached provider-catalog call for the whole run.
+ * Storage pairs share one live subscription SKU catalog for the whole run.
  */
 
 /** A parsed pair bound to the ARM location its literal resolved to. */
@@ -88,8 +91,7 @@ export function pairKey(pair: IacVmPair): string {
  * Bind each parsed location literal to an ARM location: exact name first
  * (`westeurope`), then display name ignoring case/spaces/punctuation
  * (`West Europe`). Literals that match neither become `unknown-region` skips.
- * Works for both VM pairs and generic resource pairs — they share the
- * location metadata the matcher needs.
+ * Works for VM, generic resource, and Storage pairs.
  */
 export function matchVerifyLocations<T extends {
   file: string;
@@ -101,7 +103,10 @@ export function matchVerifyLocations<T extends {
 }>(
   pairs: T[],
   locations: AzLocation[],
-): { matched: Array<{ pair: T; location: AzLocation }>; unmatched: IacSkippedResource[] } {
+): {
+  matched: Array<{ pair: T; location: AzLocation }>;
+  unmatched: Array<IacSkippedResource & { reason: "unknown-region" }>;
+} {
   const byName = new Map<string, AzLocation>();
   const byDisplay = new Map<string, AzLocation>();
   for (const l of locations) {
@@ -111,7 +116,7 @@ export function matchVerifyLocations<T extends {
   }
 
   const matched: Array<{ pair: T; location: AzLocation }> = [];
-  const unmatched: IacSkippedResource[] = [];
+  const unmatched: Array<IacSkippedResource & { reason: "unknown-region" }> = [];
   for (const pair of pairs) {
     const literal = pair.locationLiteral.trim();
     const hit =
@@ -421,6 +426,68 @@ export async function scanVerifyResourcePairs(opts: {
     policy: opts.policy,
   });
   return { rows, elapsedMs: Date.now() - started };
+}
+
+export interface VerifyStorageResultRow {
+  file: string;
+  line: number;
+  format: IacStoragePair["format"];
+  resourceType: string;
+  resourceName: string;
+  accountKind: string;
+  sku: string;
+  region: string;
+  verdict: StorageVerdict;
+  confidence: "availability";
+  evidence: Pick<StorageSkuResult, "listed" | "restrictionReasons">;
+  explanation: VerdictExplanation;
+}
+
+export async function scanVerifyStoragePairs(opts: {
+  pairs: Array<{ pair: IacStoragePair; location: AzLocation }>;
+  policy?: PolicyCheck;
+}): Promise<VerifyStorageResultRow[]> {
+  const { pairs, policy } = opts;
+  // Policy-denied pairs need no SKU evidence. Share one catalog across all
+  // remaining pairs regardless of how many kinds, SKUs, or regions they use.
+  const needsCatalog = pairs.some(({ location }) => policy?.isAllowed(location.name) !== false);
+  const catalog = needsCatalog ? await listStorageSkus() : [];
+  return pairs.map(({ pair, location }) => {
+    const { file, line, format, resourceType, resourceName, accountKind, sku } = pair;
+    const { verdict, listed, restrictionReasons, reason } = classifyStorageSku(
+      catalog,
+      accountKind,
+      sku,
+      location,
+      policy,
+    );
+    return {
+      file,
+      line,
+      format,
+      resourceType,
+      resourceName,
+      accountKind,
+      sku,
+      region: location.name,
+      verdict,
+      confidence: "availability",
+      evidence: { listed, restrictionReasons },
+      explanation: { code: verdict, reason, hint: null },
+    };
+  });
+}
+
+export function countStorageVerdicts(rows: VerifyStorageResultRow[]): Record<StorageVerdict, number> {
+  const counts = {
+    STORAGE_SKU_ADVERTISED: 0,
+    STORAGE_SKU_RESTRICTED: 0,
+    STORAGE_SKU_NOT_LISTED: 0,
+    STORAGE_SKU_UNKNOWN: 0,
+    POLICY_DENIED: 0,
+  };
+  for (const row of rows) counts[row.verdict]++;
+  return counts;
 }
 
 /* ── Human output helpers ──────────────────────────────────────────────── */

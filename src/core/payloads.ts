@@ -12,16 +12,19 @@
 import type { CacheSummary } from "./cache.js";
 import type { CompareResourceSummary } from "./compareResource.js";
 import { explainResourceVerdict, explainVmVerdict } from "./explain.js";
-import type { IacFormat, IacSkippedResource } from "./iac.js";
+import type { IacFormat, IacSkippedResource, IacSkippedStorageResource } from "./iac.js";
 import type { PolicySummary } from "./policy.js";
 import type { ResolvedResourceType } from "./resources.js";
+import type { StorageVerdict } from "./storage.js";
 import type { ResourceSuggestion, Suggestion } from "./suggest.js";
 import type { AzLocation, RegionVerdict, ResourceAvailabilityVerdict } from "./types.js";
 import {
   countResourceVerdicts,
+  countStorageVerdicts,
   countVerdicts,
   type VerifyResourceResultRow,
   type VerifyResultRow,
+  type VerifyStorageResultRow,
 } from "./verify.js";
 
 export interface CheckVmPayload {
@@ -454,11 +457,21 @@ export interface VerifyResourceSection {
   skippedFindings: IacSkippedResource[];
 }
 
+export interface VerifyStorageSection {
+  seen: number;
+  checked: number;
+  skipped: number;
+  advertisedCount: number;
+  verdictCounts: Record<StorageVerdict, number>;
+  results: VerifyStorageResultRow[];
+  skippedFindings: IacSkippedStorageResource[];
+}
+
 export interface VerifyPayload {
   schemaVersion: 1;
   kind: "verify";
   resourceKind: "vm";
-  /** Describes `results` (VM rows); generic rows carry availability on each row. */
+  /** Describes `results` (VM rows); generic resource and Storage checks use availability. */
   confidence: "deployability";
   files: string[];
   formats: IacFormat[];
@@ -482,6 +495,8 @@ export interface VerifyPayload {
   genericResources: VerifyResourceSection;
   cache: CacheSummary;
   policy: PolicySummary;
+  /** Subscription SKU findings when the input contains Storage accounts. Since 0.5.3. */
+  storageAccounts?: VerifyStorageSection;
 }
 
 export function buildVerifyPayload(input: {
@@ -495,6 +510,11 @@ export function buildVerifyPayload(input: {
   resourceRows?: VerifyResourceResultRow[];
   resourceSkipped?: IacSkippedResource[];
   genericResourceCount?: number;
+  storage?: {
+    seen: number;
+    rows: VerifyStorageResultRow[];
+    skippedFindings: IacSkippedStorageResource[];
+  };
   cache: CacheSummary;
   policy: PolicySummary;
 }): VerifyPayload {
@@ -502,7 +522,8 @@ export function buildVerifyPayload(input: {
   const resourceRows = input.resourceRows ?? [];
   const resourceSkipped = input.resourceSkipped ?? [];
   const resourceCounts = countResourceVerdicts(resourceRows);
-  return {
+  const storage = input.storage;
+  const payload: VerifyPayload = {
     schemaVersion: 1,
     kind: "verify",
     resourceKind: "vm",
@@ -532,4 +553,17 @@ export function buildVerifyPayload(input: {
     cache: input.cache,
     policy: input.policy,
   };
+  if (storage) {
+    const verdictCounts = countStorageVerdicts(storage.rows);
+    payload.storageAccounts = {
+      seen: storage.seen,
+      checked: storage.rows.length,
+      skipped: storage.skippedFindings.length,
+      advertisedCount: verdictCounts.STORAGE_SKU_ADVERTISED,
+      verdictCounts,
+      results: storage.rows,
+      skippedFindings: storage.skippedFindings,
+    };
+  }
+  return payload;
 }
