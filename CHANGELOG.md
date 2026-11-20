@@ -1,20 +1,17 @@
 # Changelog
 
+[README](README.md) · [GitHub releases](https://github.com/VidGuiCode/az-where/releases)
+
 ## 0.4.10
 
-### Resource Pick And Suggest
+### Pick or recommend a shared region
 
-- `azw pick resource storage-account,key-vault --eu` prints one script-value region where **every** requested type is `RESOURCE_SUPPORTED` — the first such region on the stable geography-group-then-name axis; a single target degenerates to the simple case. Targets reuse `parseResourceTargetList` from `compare resource` (validated, deduplicated case-insensitively on the resolved type, capped at 30, with usage hints that name the invoking command) and the same one-catalog-call engine (`classifyCompareResources`), so there is no `--concurrency` flag.
-- Default human output is the bare region name, like `pick vm`; `-o value` prints the same bare name and `-o name` is rejected as a validation error before any Azure call. On failure the JSON modes print the payload with `picked: null` and exit `1`, while the human path explains the closest miss — the requested type supported in the fewest scanned regions.
-- `azw suggest resource storage-account,key-vault --eu [--near <city>]` returns one human recommendation with a reason. Resource rows carry no quota signal, so scoring is proximity-based: `--near` ranks the all-supported regions by haversine distance via the existing `PLACES` table (`score: -distanceKm`), otherwise every candidate ties at `0` and region axis order wins. The reason always states that all N requested types are advertised there and carries the availability-not-deployability caveat; `factors` carries `distanceKm` (only with `--near`) and `geographyGroup` — never `free`/`limit`.
-- Grammar dispatch: `azw pick resource <targets>` / `azw suggest resource <targets>` route through the existing positional dispatchers (a `resource` branch beside `vm`); the `azw pick <sku>` / `azw suggest <sku>` VM shortcuts are untouched, and no new shortcut grammar is added for resources. `--sku` is rejected as VM-only when combined with resource targets.
-- Stable JSON contracts (additive at `schemaVersion: 1`, built via `src/core/payloads.ts`): pick resource carries `kind: "pick"`, `resourceKind: "resource"`, `confidence: "availability"`, `targets`, `resolved[]` (one per target), `cache`, `policy`, and `picked: {region, displayName, geographyGroup} | null`; suggest resource carries `kind: "suggest"`, the same envelope fields plus `geography`, `near`, `elapsedMs`, and `suggested: {region, displayName, reason, score, factors} | null`. The VM pick/suggest payloads are untouched.
-- Scope flags match `pick vm` / `suggest vm` (`--eu`, `--us`, `--asia`, `--geography`, `--no-policy`, `--refresh`, plus `--near` on suggest). No `--region`: scoping to one region is `check resource`'s job.
-- Exit codes: `0` on success, `1` when no region in scope advertises every requested type (payload still printed in JSON modes), `3` validation.
+- `azw pick resource storage-account,key-vault --eu -o value` prints the first region that advertises every requested type. `azw suggest resource storage-account,key-vault --eu --near Luxembourg` recommends a shared region with a reason and uses proximity where coordinates are available.
+- Both commands accept aliases and full ARM resource types. They return availability results from the provider catalog and exit `1` if no region matches every type. See the [resource pick and suggest payloads](docs/json-contracts.md#resource-pick-and-suggest) for script output, supported flags, and failure details.
 
 ### Tooling
 
-- `verify-pack` no longer inherits the parent npm lifecycle's `allow-scripts` config into its nested project-scoped install — npm 11 rejects it there (`EALLOWSCRIPTS`), which broke `npm run verify-pack` on machines with `allow-scripts` configured.
+- Fixed `npm run verify-pack` on npm 11 when `allow-scripts` is configured. The temporary install now clears the inherited setting.
 
 ## 0.4.9
 

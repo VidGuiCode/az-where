@@ -1,156 +1,56 @@
 # Architecture
 
-## Product Shape
+[README](../README.md) · [Command standard](command-standard.md) · [JSON contracts](json-contracts.md)
 
-`az-where` is a local, read-only Azure availability discovery CLI. It answers "what and where can my current Azure subscription deploy?" while leaving actual deployment to `az`, Terraform, Bicep, and CI/CD systems.
+`az-where` combines read-only Azure signals into region, VM SKU, and resource-type verdicts. Both binaries, `azw` and `az-where`, run the compiled `dist/cli.js`.
 
-The current implementation has deep VM support. That is the first complete vertical, not the permanent product boundary.
+## Request flow
 
-The design split is:
-
-```text
-az gives raw Azure facts and performs operations.
-azw combines read-only facts into availability answers for humans and scripts.
+```mermaid
+flowchart LR
+    CLI["CLI command"] --> Core["Scan or classify"]
+    Core --> ARM["Azure Resource Manager"]
+    ARM -->|"Token via az"| Auth["Azure CLI session"]
+    ARM -->|"Cacheable lists"| Cache["Local ARM cache"]
+    Core -->|"Optional compute estimate"| Prices["Azure Retail Prices API"]
+    Core --> Output["Table, JSON, or script values"]
 ```
 
-It delegates authentication to the official Azure CLI and calls Azure Resource Manager directly for the hot paths.
+- [CLI entry point](../src/cli.ts) registers Commander handlers, loads the version, and rewrites legacy positional VM shorthand. The [command handlers](../src/commands/) resolve scope and format the results.
+- [Azure CLI adapter](../src/core/az.ts) runs `az` for account context, diagnostics, and authentication. The [ARM client](../src/core/arm.ts) memoizes the bearer token in process memory, follows list pagination, and retries transient failures.
+- [Geography](../src/core/geo.ts) filters Azure’s subscription locations to usable physical regions and applies geography groups or a region selector.
+- [Pricing](../src/core/pricing.ts) queries the public Retail Prices API for optional on-demand compute estimates. Pricing is independent of the verdict.
 
-Two boundaries talk to Azure:
+## How verdicts are made
 
-- **Azure CLI (`az`)**: used for account context and `az account get-access-token`.
-- **ARM REST (`fetch`)**: used for locations, policy assignments, Compute SKU lists, and per-region usage/quota.
-- **Azure Retail Prices API (`fetch`)**: used for optional unauthenticated compute price estimates.
+### Virtual machines
 
-The tool never creates, modifies, or deletes Azure resources.
+[VM scanning](../src/core/scan.ts) checks allowed-location policy, looks up the SKU in the regional Compute catalog, reads subscription restrictions, and compares the instance’s vCPU requirement with live VM-family quota. `FULL` includes any quota shortfall, even when some vCPUs remain. `QUOTA_UNKNOWN` covers missing usage data and usage-request failures.
 
-## CLI Layout
+[VM comparison](../src/core/compare.ts) reuses the same regional SKU catalog and usage data for multiple requested sizes. [Family search](../src/core/available.ts) uses those data sources to group matching sizes with available regions.
 
-`package.json` exposes two binaries that both point at `dist/cli.js`:
+### Generic resources
 
-| Name | Intended use |
-|---|---|
-| `az-where` | Long, discoverable form |
-| `azw` | Short form used in examples |
+[Resource discovery](../src/core/resources.ts) resolves friendly aliases or raw ARM resource types and classifies regions from the subscription’s provider catalog. `resources` lists catalog entries. The result carries `availability` confidence. Provider registration is surfaced as evidence, and service-specific constraints such as SKU, quota and capacity are outside this check.
 
-`src/cli.ts` registers commands and rewrites positional SKU shorthand. For example, `azw B1s --eu` becomes `azw regions Standard_B1s --eu` before Commander parses arguments.
+[Resource comparison](../src/core/compareResource.ts) classifies all requested types from a single catalog load. `pick resource` returns the first region advertising all requested types in geography-group and region-name order. `suggest resource` uses the same candidates and can rank them by proximity using the [built-in coordinates](../src/core/suggest.ts).
 
-Future generalized commands should follow [the CLI command standard](command-standard.md): `azw <verb> <kind> <target> [scope flags] [output flags]`.
+### Infrastructure files
 
-The canonical grammar should be used for new docs and new resource kinds, while existing VM shortcuts remain compatibility aliases. For example, `azw B1s --eu` remains valid, but the explicit form is `azw availability vm B1s --eu`.
+[The IaC parser](../src/core/iac.ts) extracts literal VM and scale-set location/size pairs and literal locations for mapped generic resource types in Terraform and Bicep. It reports dynamic locations or VM sizes as skipped. It reads the supplied files directly, without evaluating variables or following modules.
 
-## Commands
+[Verification](../src/core/verify.ts) groups VM checks by region to reuse catalog and usage data. A literal scale-set capacity multiplies the required vCPUs. Generic resources share a provider-catalog load across all files.
 
-| File | Verb |
-|---|---|
-| `where.ts` | `azw where` - current Azure subscription and user |
-| `availability.ts` | `azw availability vm <sku>` / `azw availability resource <target>` - canonical availability scans |
-| `check.ts` | `azw check vm <sku>` / `azw check resource <target>` - one-region verdicts with a reason |
-| `compare.ts` | `azw compare vm <sku-list>` / `azw compare resource <target-list>` - region × size deployability and region × type availability matrices |
-| `verify.ts` | `azw verify <files...>` - IaC preflight for VM location+size pairs and generic resource locations |
-| `regions.ts` | `azw regions <sku>` - full availability table |
-| `pick.ts` | `azw pick vm <sku>` / `azw pick resource <target-list>` - one region name for scripts |
-| `suggest.ts` | `azw suggest vm <sku>` / `azw suggest resource <target-list>` - recommended region with a short reason |
-| `available.ts` | `azw available --family <prefix>` - deployable VM SKUs in a family |
-| `price.ts` | `azw price <sku> --region <name>` - retail compute price estimate |
-| `quota.ts` | `azw quota <sku>` - quota-focused view sorted by free vCPUs |
-| `geos.ts` | `azw geos` - geography groups visible to the subscription |
-| `skus.ts` | `azw skus` - VM SKU discovery |
-| `resources.ts` | `azw resources` - resource-type catalog discovery |
-| `doctor.ts` | `azw doctor` - local prerequisite checklist |
-| `update.ts` | `azw update` - latest-release check and confirmed install flow |
+## Policy, cache, and credentials
 
-Command handlers stay thin: parse flags, call core helpers, print output.
+[Policy handling](../src/core/policy.ts) reads subscription policy assignments live and intersects the enforced allowed-location lists it recognizes. `pick` and `suggest` fail if the policy read fails, unless invoked with `--no-policy`. Other verdict commands can report results with incomplete policy evidence. Check `policy.checked` and `policy.error` before relying on a JSON verdict.
 
-## Core Flow
+[ARM caching](../src/core/cache.ts) stores subscription locations, provider catalog data, and Compute SKU lists for 10 minutes. Entries are keyed by subscription ID and request path. `--refresh` bypasses cache reads and refreshes the downloaded data. Quota and policy results are always read live when checked. The cache stores catalog responses, and credentials stay in memory.
 
-`src/core/arm.ts` gets one bearer token from `az account get-access-token`, memoizes it for the process, and sends ARM HTTPS requests under the selected subscription.
+[Release checks](../src/core/updateCheck.ts) use a separate 24-hour cache for GitHub update notifications. The explicit `update` command refreshes release information and can install a package after interactive confirmation.
 
-`src/core/geo.ts` reads locations from ARM and filters out non-physical/internal regions.
+## Output and failures
 
-`src/core/policy.ts` reads subscription policy assignments and extracts enforced allowed-location lists.
+[Explanations](../src/core/explain.ts) translate observed verdict evidence into a reason and an optional hint. [Payload builders](../src/core/payloads.ts) assemble most versioned JSON responses. The [JSON contracts](json-contracts.md) describe their fields and command-specific exit behavior.
 
-`src/core/scan.ts` scans regions in parallel for one SKU. For each region it:
-
-1. Applies Azure Policy allowed-location restrictions when enabled.
-2. Reads location-filtered Compute SKUs.
-3. Checks whether the target VM SKU exists.
-4. Checks `NotAvailableForSubscription` restrictions.
-5. Reads live usage/quota for the SKU family only when the SKU is offered and allowed.
-6. Requires free family vCPU quota to cover the SKU's vCPU requirement.
-
-`src/core/available.ts` powers `azw available`. It scans each candidate region once, reads matching family SKUs from the location-filtered Compute SKU endpoint, checks live quota per region, then groups deployable results by SKU.
-
-`src/core/pricing.ts` reads the public Azure Retail Prices API for optional compute-only estimates. Pricing never changes deployability verdicts; it only enriches `price` and `available --price` output.
-
-`src/core/iac.ts` parses Terraform (`.tf`) and Bicep (`.bicep`) files into statically-known `location + size` pairs (VMs and scale sets) and, since 0.4.8, generic `type + location` pairs for the types in its IaC mapping table (storage accounts, key vaults, web/function apps, service plans, AKS, PostgreSQL flexible servers). It is a lightweight scanner, not a language toolchain: only literal values resolve, comments/heredocs/multi-line strings are blanked, and dynamic expressions are reported as skipped findings with the raw text echoed.
-
-`src/core/verify.ts` runs those pairs through the same verdict chain as `check vm`, grouped by region (one cached catalog call plus one live usage call per region, mirroring `compare`). Scale-set `capacity` multiplies the vCPU requirement. Generic pairs run through the same provider-catalog classification as `check resource` — one shared catalog call per run — with `availability` confidence, never deployability.
-
-Quota/usage is intentionally never cached.
-
-## Verdicts
-
-| Verdict | Meaning |
-|---|---|
-| `AVAILABLE` | SKU offered, subscription allowed, quota covers the SKU's vCPU requirement |
-| `QUOTA_UNKNOWN` | SKU offered, but usage/quota could not be matched |
-| `FULL` | SKU offered and allowed, but quota exhausted |
-| `BLOCKED_FOR_SUB` | SKU offered, but this subscription is blocked in that region |
-| `POLICY_DENIED` | Azure Policy allowed-location assignment blocks deployment in that region |
-| `SKU_NOT_OFFERED` | Azure does not offer the SKU in that region |
-
-`sortVerdicts()` orders deployable rows first. Human tables hide `SKU_NOT_OFFERED` rows by default; JSON keeps every row.
-
-## Explanations
-
-`src/core/explain.ts` turns a verdict row into a factual reason plus an optional actionable hint (`{ code, reason, hint }`). `check` commands print the reason and hint under the verdict table and carry them in JSON as `explanation`; availability footers and `pick`/`suggest` failure messages reuse the same module for blocker summaries. Explanations state observed evidence only, and generic resource explanations never claim deployability.
-
-`src/core/payloads.ts` builds every documented JSON payload so field names and order stay pinned in one place; the shapes are documented in [json-contracts.md](json-contracts.md).
-
-## Cache
-
-`src/core/cache.ts` caches low-risk ARM list responses for 10 minutes under the platform cache directory:
-
-- `/locations`
-- subscription-wide Compute SKU list
-- location-filtered Compute SKU list
-
-`--refresh` bypasses cached ARM data. Usage/quota endpoints are never cached so deployability decisions do not use stale quota.
-
-Policy assignments are not cached. Policy remains live because it can directly decide whether `pick`, `suggest`, or `available` may safely report a deployable target.
-
-## Suggestion
-
-`src/core/suggest.ts` powers `azw suggest`. It considers only `AVAILABLE` regions, prefers more free quota, optionally applies proximity with a built-in coordinate table, and uses region name as a stable tie-break.
-
-`chooseResourceSuggestion` in the same module powers `azw suggest resource` (since 0.4.10). Candidates are the regions that advertise every requested type; resource rows carry no quota signal, so scoring is proximity only — `--near` ranks by haversine distance (`score: -distanceKm`), otherwise every candidate ties at 0 and the stable geography-group-then-name axis order wins. Reasons always state the availability-not-deployability caveat.
-
-`pick` remains strict and script-first. `suggest` is the human-facing recommendation command.
-
-## Output Modes
-
-- Human table output uses ANSI-aware padding and color when supported.
-- `--json` prints structured JSON and suppresses progress.
-- `--compact` prints one-line JSON.
-- `--name` / `-o name` prints one name per line only where supported.
-- `-o value` prints exactly one script value only where supported.
-- Unsupported `value` and `name` combinations fail during command validation before any Azure calls.
-
-Progress uses stderr and switches between live redraw on TTY and log lines in CI/non-TTY. Machine-readable modes stay quiet.
-
-## Auth And Errors
-
-`src/core/az.ts` is the only process-spawning boundary. It detects missing Azure CLI and not-logged-in states.
-
-`src/core/errors.ts` owns typed errors and exit codes:
-
-| Code | Meaning |
-|---|---|
-| `0` | Success |
-| `1` | Generic failure, ARM failure, or no deployable region |
-| `2` | Azure login required |
-| `3` | Validation error |
-| `4` | `azw doctor` found a missing prerequisite |
-| `127` | Azure CLI missing |
-
-ARM HTTP errors include status code, endpoint, ARM error code, and ARM message when available. JSON error output exposes those details.
+Human output is formatted for the terminal. Progress uses stderr and is suppressed in machine output modes. The [error handler](../src/core/errors.ts) maps typed errors to stderr output and [exit codes](../README.md#exit-codes).

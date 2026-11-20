@@ -1,24 +1,25 @@
 # JSON Contracts
 
-Stable JSON shapes for scripting and agents, pinned per command. Field names here are a contract: human tables can change cosmetically, JSON field names do not change casually.
+[README](../README.md#use-in-scripts) · [Command standard](command-standard.md) · [Architecture](architecture.md)
 
-Every shape below is enforced by `src/core/payloads.ts` (payload builders) and pinned by `tests/core/payloads.test.ts`; live variants run under `AZW_LIVE=1` in `tests/live/arm-smoke.test.ts`.
+Use `-o json` or `-o compact` to read versioned discovery results. The [payload builders](../src/core/payloads.ts) assemble most of these objects, and [contract tests](../tests/core/payloads.test.ts) pin their field names. See [Contributing](../CONTRIBUTING.md#verify-a-change) for the opt-in live checks.
+
+[Verdicts](#verdict-vocabulary) · [Common fields](#common-envelope-fields) · [Command payloads](#commands) · [Errors](#error-envelope)
 
 ## Stability Rules
 
-- All payloads carry `schemaVersion: 1` and will keep it while changes are **additive-only**: new fields may be appended, existing fields are never renamed, removed, or change meaning.
-- Fields added after a command's first documented release are marked **(since 0.4.6)** in the tables below.
-- Fields that are not applicable are present with value `null` — they are never omitted — unless the table says otherwise.
-- `-o json` and `-o compact` emit the identical object; only whitespace differs (pretty vs one line).
-- Exit codes: `0` success, `1` scan completed but nothing passed the command's bar (payload is still printed), `2` not logged in, `3` validation error, `4` doctor failure, `127` Azure CLI missing. See [architecture.md](architecture.md).
+- Changes within `schemaVersion: 1` are additive. Consumers should accept new fields and use field names when reading results.
+- Nullable fields use JSON `null` when the value is unavailable. Optional fields may be omitted.
+- `-o json` formats the result across lines. `-o compact` writes the same result on one line.
+- A completed scan may emit a result on stdout and exit `1`. A runtime failure can also exit `1`, with error details on stderr. Check both the exit status and the output stream. See the [exit code table](../README.md#exit-codes).
 
 ## Verdict Vocabulary
 
-These are the exact verdict strings emitted by the implementation (older docs used the concept name `QUOTA_FULL`; the shipped code value is `FULL`):
+Parse these exact verdict strings.
 
 | Verdict | Kind | Meaning |
 |---|---|---|
-| `AVAILABLE` | VM | Offered, not restricted, policy-allowed, and enough free vCPUs for one instance |
+| `AVAILABLE` | VM | SKU offered, no blocking subscription restriction or evaluated policy, and sufficient VM-family vCPU quota |
 | `FULL` | VM | Offered but the family quota has fewer free vCPUs than the size needs |
 | `SKU_NOT_OFFERED` | VM | The region's SKU catalog does not list the size |
 | `BLOCKED_FOR_SUB` | VM | Azure restricts the size for this subscription in this region |
@@ -33,8 +34,8 @@ These are the exact verdict strings emitted by the implementation (older docs us
 
 | Confidence | Meaning |
 |---|---|
-| `deployability` | VM checks combining SKU offer, subscription restriction, policy, and live quota — strong enough to pick a deployment target |
-| `availability` | Generic resource checks — the provider catalog advertises the region, but SKU/quota/capacity are not checked; never treat as deployability |
+| `deployability` | VM checks combine SKU, subscription, policy, and live VM-family quota evidence. See `policy.checked` and `policy.error` for policy coverage. |
+| `availability` | Generic resource checks describe the provider catalog’s advertised locations. Service-specific SKU, quota, and capacity are outside the check. |
 
 ## Common Envelope Fields
 
@@ -55,8 +56,8 @@ These are the exact verdict strings emitted by the implementation (older docs us
 |---|---|---|
 | `region` | string | ARM location name, e.g. `westeurope` |
 | `displayName` | string | |
-| `geographyGroup` | string \| undefined | e.g. `Europe` |
-| `physicalLocation` | string \| undefined | |
+| `geographyGroup` | string, optional | e.g. `Europe` |
+| `physicalLocation` | string, optional | |
 | `skuOffered` | boolean | |
 | `family` | string \| null | e.g. `standardBSFamily` |
 | `used`, `limit`, `free` | number \| null | Family vCPU quota numbers |
@@ -129,7 +130,7 @@ Same envelope with `resourceKind: "resource"`, plus `target`, `resolved` (`{ inp
   "checks": { "...": "one VM region row (an object, never an array)" },
   "explanation": {
     "code": "FULL",
-    "reason": "Standard_B1s needs 2 vCPUs but family standardBSFamily has only 0/4 free in westeurope — 2 vCPUs short.",
+    "reason": "Standard_B1s needs 1 vCPUs but family standardBSFamily has only 0/4 free in westeurope — 1 vCPU short.",
     "hint": "Request a quota increase (Azure Portal → Quotas) or free up vCPUs, then re-check."
   }
 }
@@ -175,26 +176,30 @@ Same envelope with `resourceKind: "resource"`, `resolved`, `confidence: "availab
   "resourceKind": "vm",
   "sku": "Standard_B1s",
   "geography": "Europe",
-  "near": null,
+  "near": "Luxembourg",
   "elapsedMs": 4200,
   "cache": { "...": "..." },
   "policy": { "...": "..." },
   "suggested": {
     "region": "westeurope",
     "displayName": "West Europe",
-    "reason": "westeurope is deployable with 6/10 free",
-    "score": 5000,
-    "factors": { "free": 6, "limit": 10, "distanceKm": 12, "geographyGroup": "Europe" }
+    "reason": "westeurope is deployable with 6/10 free and is about 318 km from the requested location.",
+    "score": 5682,
+    "factors": { "free": 6, "limit": 10, "distanceKm": 318, "geographyGroup": "Europe" }
   }
 }
 ```
 
-- `near` is the `--near` input or `null`. `factors.distanceKm` appears only with `--near`.
+- `near` is the `--near` input or `null`. `factors.distanceKm` requires `--near` and a region with known coordinates. The score is `1000 × free vCPUs − distanceKm`, with zero used for an absent distance.
 - On failure the same payload is printed with `suggested: null` and exit `1`.
 
-### `azw pick resource <target-list> [scope] -o json` (since 0.4.10)
+### Resource pick and suggest
 
-One script-value region where **every** requested type is `RESOURCE_SUPPORTED` — the first such region on the stable geography-group-then-name axis. A single target degenerates to the simple case.
+Both commands accept up to 30 targets, deduplicated case-insensitively by resolved ARM type. They share a single provider catalog load. The `--concurrency` option shown in shared command help applies to VM scans.
+
+#### `azw pick resource <target-list> [scope] -o json` (since 0.4.10)
+
+Returns the first region where **every** requested type is `RESOURCE_SUPPORTED`, in geography-group and region-name order. A single target is also valid.
 
 ```json
 {
@@ -210,6 +215,13 @@ One script-value region where **every** requested type is `RESOURCE_SUPPORTED` �
       "alias": "storage-account",
       "namespace": "Microsoft.Storage",
       "typePath": "storageAccounts"
+    },
+    {
+      "input": "key-vault",
+      "resourceType": "Microsoft.KeyVault/vaults",
+      "alias": "key-vault",
+      "namespace": "Microsoft.KeyVault",
+      "typePath": "vaults"
     }
   ],
   "cache": { "used": true, "refreshed": false, "ttlSeconds": 600 },
@@ -218,14 +230,13 @@ One script-value region where **every** requested type is `RESOURCE_SUPPORTED` �
 }
 ```
 
-- Targets reuse the `compare resource` parser: same friendly aliases and raw types, validated, deduplicated case-insensitively (on the resolved type), capped at 30 — all before any Azure call. One shared provider-catalog call per run, so there is no `--concurrency` flag.
 - `resolved` carries one entry per target in request order; `picked` carries `region`, `displayName`, and `geographyGroup` only — resource rows have no quota fields.
 - On failure the same payload is printed with `picked: null` and exit `1`; the human path explains the closest miss (the requested type supported in the fewest scanned regions).
 - Default human output is the bare region name, like `pick vm`; `-o value` prints the same bare name; `-o name` is rejected as a validation error. No `--region` flag: scoping to one region is `check resource`'s job. Scope flags otherwise match `pick vm` (`--eu`, `--us`, `--asia`, `--geography`, `--no-policy`, `--refresh`).
 
-### `azw suggest resource <target-list> [scope] [--near <city>] -o json` (since 0.4.10)
+#### `azw suggest resource <target-list> [scope] [--near <city>] -o json` (since 0.4.10)
 
-One human recommendation with a reason. Resource rows carry no quota signal, so scoring is proximity-based: `--near` ranks the all-supported regions by haversine distance (`score: -distanceKm`); without it every candidate ties at `0` and the stable region axis order wins.
+Recommends a region that advertises every requested type. With `--near` and known coordinates, the score is the negative great-circle distance in kilometres. Scores are zero when distance is unavailable or `--near` is omitted. Ties follow the shared geography-group and region-name ordering.
 
 ```json
 {
@@ -243,9 +254,9 @@ One human recommendation with a reason. Resource rows carry no quota signal, so 
   "suggested": {
     "region": "westeurope",
     "displayName": "West Europe",
-    "reason": "westeurope advertises all 2 requested resource types and is about 322 km from the requested location — availability, not deployability.",
-    "score": -322,
-    "factors": { "distanceKm": 322, "geographyGroup": "Europe" }
+    "reason": "westeurope advertises all 2 requested resource types and is about 318 km from the requested location — availability, not deployability.",
+    "score": -318,
+    "factors": { "distanceKm": 318, "geographyGroup": "Europe" }
   }
 }
 ```
@@ -255,7 +266,17 @@ One human recommendation with a reason. Resource rows carry no quota signal, so 
 
 ### `azw compare vm <sku-list> [scope] -o json`
 
-Documented with 0.4.5: a shared `regions` string axis plus `results[]` — one per requested SKU in request order — carrying `family`, `vcpus`, `memoryGiB`, per-region cells, `deployableRegions`, `deployableCount`, and `verdictCounts`. See the 0.4.5 changelog entry for the full field list.
+The common envelope adds `confidence: "deployability"`, `skus`, `regions`, `geography`, `region`, `scannedAt`, `elapsedMs`, and `results`. The `skus` array contains normalized, deduplicated sizes in input order.
+
+| Field in `results[]` | Meaning |
+|---|---|
+| `sku` | Normalized SKU name |
+| `family`, `vcpus`, `memoryGiB` | SKU catalog facts, nullable when unknown |
+| `regions` | One cell per region in the same order as the top-level `regions` string array |
+| `deployableRegions`, `deployableCount` | Region names and count for `AVAILABLE` cells |
+| `verdictCounts` | Count by VM verdict string |
+
+Cells use the [VM region row](#vm-region-row-regions-and-checks-in-vm-payloads) fields with five exclusions (`family`, `requiredVcpus`, `skuRestrictions`, `familySizesOffered`, `errorDetail`). Exit `1` when no requested size is `AVAILABLE` in any scanned region. Use `json` or `compact` for machine output.
 
 ### `azw compare resource <target-list> [scope] -o json` (since 0.4.9)
 
@@ -383,7 +404,7 @@ IaC preflight: one `results[]` row per statically-known `location + size` pair p
 
 ## Error Envelope
 
-Failures print to **stderr** (stdout stays empty) as:
+Errors handled by a command in a resolved JSON output mode are written to **stderr**. A completed scan with an unfavorable verdict still writes its result to stdout.
 
 ```json
 {
@@ -394,4 +415,4 @@ Failures print to **stderr** (stdout stays empty) as:
 }
 ```
 
-`code` is `ARM_HTTP_ERROR`, `AZ_CLI_ERROR`, `ValidationError`, `PolicyReadError`, or an error class name. The bearer token never appears in any output.
+`ARM_HTTP_ERROR` and `AZ_CLI_ERROR` include `details`. Other handled errors typically carry the error class name as `code` plus a message. Argument parser failures can be plain text, including when a command fails before resolving its output mode.

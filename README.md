@@ -1,13 +1,15 @@
 <div align="center">
 
-# `az-where`
+# az-where
 
-**What and where can my Azure subscription deploy?**
+**Find where your Azure subscription can run a VM, and where Azure advertises the resources you need.**
 
-[![Release](https://img.shields.io/badge/release-v0.4.7-cb3837?logo=github&logoColor=white)](https://github.com/VidGuiCode/az-where/releases)
-[![License](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D20-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
-[![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6?logo=typescript&logoColor=white)](tsconfig.json)
+[![Latest GitHub release](https://img.shields.io/github/v/release/VidGuiCode/az-where?label=release&color=2563eb)](https://github.com/VidGuiCode/az-where/releases/latest)
+[![CI](https://github.com/VidGuiCode/az-where/actions/workflows/ci.yml/badge.svg)](https://github.com/VidGuiCode/az-where/actions/workflows/ci.yml)
+[![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-43853d?logo=node.js&logoColor=white)](#install)
+[![MIT license](https://img.shields.io/badge/license-MIT-64748b)](LICENSE)
+
+[Install](#install) · [Find a region](#find-a-region) · [Preflight Terraform or Bicep](#preflight-terraform-or-bicep) · [Use in scripts](#use-in-scripts)
 
 </div>
 
@@ -15,269 +17,146 @@
 azw availability vm B1s --eu
 ```
 
-`az-where` is a read-only Azure availability discovery CLI. Today it has deep VM support: it checks Azure Policy allowed locations, VM SKU availability, subscription restrictions, and vCPU quota across regions, then prints the places where the size can actually deploy.
+```text
+REGION          GEO   LOCATION    OFFERED   QUOTA       VERDICT
+─────────────   ───   ─────────   ───────   ─────────   ────────────
+westeurope      EU    Amsterdam   ✓         6/10 free   ✓ DEPLOY
+francecentral   EU    Paris       ✓         0/10 free   ✗ QUOTA FULL
 
-It does not deploy resources. Use it to choose or check a location, then use `az`, Terraform, Bicep, or your CI/CD system to deploy.
+Ready to deploy Standard_B1s (1): westeurope
+Scanned 2 regions in 1.4s.
+```
 
-It is an unofficial community CLI. It wraps the official [Azure CLI (`az`)](https://learn.microsoft.com/cli/azure/) for authentication and uses ARM REST for the region checks. It never stores credentials.
+*Illustrative output. Results depend on your subscription and current quota.*
+
+| What you’re choosing | What az-where checks |
+| --- | --- |
+| **A VM size and region** | SKU offers, subscription restrictions, allowed-location policy and live VM-family vCPU quota. |
+| **A region for a resource type** | Locations advertised by the Azure Resource Manager provider catalog, with allowed-location policy when available. |
+
+`az-where` is an unofficial, read-only CLI. It uses your Azure CLI session and leaves deployment to your existing tools. VM verdicts reflect the checks above. Generic resource verdicts have **availability** confidence and leave service-specific SKU, quota, capacity, and deployment rules unverified.
 
 ## Install
 
-Requires **Node 20+** and the **Azure CLI** installed and logged in:
+Use **Node.js 20+** and **Azure CLI 2.11.0+**. The GitHub release tarball installs both `azw` and `az-where`.
 
 ```bash
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.4.10/az-where-0.4.10.tgz
 az login
+azw --version
+azw doctor
 ```
 
-Install the current release:
+Use `azw where` to confirm the active subscription. To switch, run `az account set --subscription "<subscription id or name>"`. Run `azw update` to check GitHub for a newer release. It asks before installing in an interactive terminal.
 
-```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.4.7/az-where-0.4.7.tgz
-```
-
-Or build from source:
+<details>
+<summary>Build and install from source</summary>
 
 ```bash
 git clone https://github.com/VidGuiCode/az-where.git
 cd az-where
-npm install
+npm ci
 npm run build
 npm install -g .
 ```
 
-Verify:
+</details>
+
+## Find a region
+
+| Goal | Command |
+| --- | --- |
+| Scan European regions for one VM size | `azw availability vm B1s --eu` |
+| Explain a VM verdict in one region | `azw check vm B1s --region westeurope` |
+| Compare VM sizes across regions | `azw compare vm B1s,B2s,D2s_v5 --eu` |
+| Pick a VM region for a script | `azw pick vm B1s --eu -o value` |
+| Recommend a VM region using quota and proximity | `azw suggest vm B1s --eu --near Luxembourg` |
+| Find regions that advertise a resource type | `azw availability resource storage-account --eu` |
+| Explain a resource verdict in one region | `azw check resource key-vault --region westeurope` |
+| Compare resource types across regions | `azw compare resource storage-account,key-vault --eu` |
+| Pick a region advertising every requested type | `azw pick resource storage-account,key-vault --eu -o value` |
+| Recommend a region for several types | `azw suggest resource storage-account,key-vault --eu --near Luxembourg` |
+
+Resource commands accept aliases such as `storage-account` and full ARM types such as `Microsoft.Storage/storageAccounts`. Use `azw resources --namespace Microsoft.Storage` to explore the catalog.
+
+<details>
+<summary>Discover SKUs, quota, prices, and geography filters</summary>
+
+| Goal | Command |
+| --- | --- |
+| List VM sizes advertised in a region | `azw skus --region westeurope --family B` |
+| Find deployable VM sizes in a family | `azw available --family B --eu` |
+| Find deployable sizes with retail price estimates | `azw available --family B --eu --price --currency EUR --sort price` |
+| Estimate compute cost for one size and region | `azw price B2ats_v2 --region swedencentral --currency EUR` |
+| Sort VM regions by free family vCPUs | `azw quota B1s --eu` |
+| See geography groups visible to your subscription | `azw geos` |
+
+`--eu`, `--us`, and `--asia` select the Azure geography groups Europe, US, and Asia Pacific. Use `--geography "<group>"` for other groups, and `--refresh` to bypass cached catalog data. VM availability hides sizes absent from a regional catalog in the table by default. Use `--all` to show those regions.
+
+Retail prices estimate on-demand VM compute. The estimate excludes disks, bandwidth, taxes, credits, and account-specific discounts.
+
+</details>
+
+Run `azw <command> --help` for supported flags, or `azw availability vm --help` for an individual subcommand.
+
+## Preflight Terraform or Bicep
 
 ```bash
-azw --version
-azw where
+azw verify main.tf vm.tf
+azw verify main.bicep -o json
 ```
 
-Two binaries are installed: `azw` and `az-where`. They are the same tool.
+`verify` reads the supplied files. It checks literal VM location and size pairs, including scale sets, and looks up advertised locations for common resources such as storage accounts, key vaults, web and function apps, service plans, AKS, and PostgreSQL flexible servers.
 
-## Quick Start
+A blocked check exits with code `1`. Dynamic values and unknown region literals are listed as skipped with their file and line. Review skips before using the result as a CI gate.
 
-| Need | Command |
-|---|---|
-| Check a VM size globally | `azw availability vm B1s` |
-| Check only Europe / US / Asia Pacific | `azw availability vm B1s --eu` / `--us` / `--asia` |
-| Check one VM size in one region | `azw check vm B1s --region westeurope` |
-| Compare several VM sizes at once | `azw compare vm B1s,B2s,D2s_v5 --eu` |
-| Compare several resource types at once | `azw compare resource storage-account,key-vault --eu` |
-| Preflight Terraform/Bicep before apply | `azw verify main.tf vm.tf` |
-| Print one deployable region | `azw pick vm B1s` |
-| Print one region that hosts every resource type | `azw pick resource storage-account,key-vault --eu` |
-| Get a recommended region with a reason | `azw suggest vm B1s --eu --near Luxembourg` |
-| Get a recommended resource region near you | `azw suggest resource storage-account,key-vault --eu --near Luxembourg` |
-| Check generic resource availability | `azw availability resource storage-account --eu` |
-| Check one resource in one region | `azw check resource storage-account --region westeurope` |
-| Find deployable SKUs in a family | `azw available --family B --eu` |
-| Compare deployable family options with price | `azw available --family B --eu --price --currency EUR --sort price` |
-| Price one VM size in one region | `azw price B2ats_v2 --region swedencentral --currency EUR` |
-| Sort deployable regions by quota headroom | `azw quota B1s` |
-| List geography groups your subscription sees | `azw geos` |
-| Discover VM SKU names, even if not deployable | `azw skus --eu --family B` |
-| Show current Azure identity/subscription | `azw where` |
-| Verify prerequisites (az, login, token) | `azw doctor` |
-| Check/install a newer release | `azw update` |
+## Use in scripts
 
-## Example Output
+Capture a region and proceed only if the pick succeeds.
 
-```text
-REGION              GEO    LOCATION          OFFERED   QUOTA        VERDICT
------------------   ----   ---------------   -------   ----------   --------------
-westeurope          EU     Amsterdam         yes       6/10 free    DEPLOY
-francecentral       EU     Paris             yes       0/10 free    QUOTA FULL
-germanywestcentral  EU     Frankfurt         no        -            SKU NOT OFFERED
-denmarkeast         EU     Copenhagen        no        -            POLICY DENIED
-
-Ready to deploy Standard_B1s (1): westeurope
-Scanned 17 regions in 5.8s.
-```
-
-`check` commands explain the verdict right under the table:
-
-```text
-REGION     GEO    LOCATION    OFFERED   QUOTA       VERDICT
---------   ----   ---------   -------   ---------   -------------
-westeurope EU     Amsterdam   yes       0/4 free    QUOTA FULL
-
-Reason: Standard_B1s needs 2 vCPUs but family standardBSFamily has only 0/4 free in westeurope — 2 vCPUs short.
-  Hint: Request a quota increase (Azure Portal → Quotas) or free up vCPUs, then re-check.
-```
-
-`verify` runs those same checks over your infrastructure code before you deploy it, and also checks common generic resources (storage accounts, key vaults, web/function apps, service plans, AKS, PostgreSQL flexible servers) against the regions your files name — availability confidence, never a deployability claim:
-
-```text
-RESOURCE   SKU    REGION       VERDICT          QUOTA
---------   ----   ----------   --------------   ---------
-vm         B1s    westeurope   ✓ DEPLOY         6/10 free
-vm_win     D2s_v5 westeurope   ✗ QUOTA FULL     0/10 free
-
-Reason: vm_win @ main.tf:32 — Standard_D2s_v5 needs 4 vCPUs but family standardDDSv5Family has only 0/10 free in westeurope — 4 vCPUs short.
-  Hint: Request a quota increase (Azure Portal → Quotas) or free up vCPUs, then re-check.
-1 of 2 checked VM resources cannot deploy as written.
-
-Generic resources (availability, not deployability):
-RESOURCE   TYPE             REGION       VERDICT         CONFIDENCE
---------   ----             ----------   --------------  ------------
-stg        storage-account  westeurope   ✓ SUPPORTED     availability
-
-Skipped 1 resource — not statically checkable:
-  vmss @ main.tf:48 — var.location (dynamic-location)
-```
-
-Only statically-literal `location`/`size` pairs are checked; resources driven by variables are listed as skipped with the expression echoed, never guessed.
-
-During scans, stderr shows progress immediately, including the initial Azure token/region lookup, then switches to the per-region progress bar when the region count is known.
-
-## Commands
+**Bash**
 
 ```bash
-azw availability vm <sku>
-                         # canonical VM availability scan
-azw availability resource <alias-or-type>
-                         # generic Azure resource availability scan
-azw check vm <sku> --region <name>
-                         # one-region VM deployability verdict
-azw check resource <alias-or-type> --region <name>
-                         # one-region generic resource availability verdict
-azw compare vm <sku-list>
-                         # region × size deployability matrix (e.g. B1s,B2s,D2s_v5)
-azw compare resource <target-list>
-                         # region × type availability matrix (aliases or raw types)
-azw verify <files...>    # preflight .tf/.bicep files: check VM size pairs and
-                         # generic resource regions before terraform apply / az deployment
-azw pick vm <sku>        # one deployable region name for scripts
-azw pick resource <target-list>
-                         # one region name that advertises every requested type
-azw suggest vm <sku>     # recommended region with a short explanation
-azw suggest resource <target-list>
-                         # recommended resource region (proximity-based; availability, not deployability)
-azw regions <sku>        # compatibility shortcut for VM availability
-azw pick <sku>           # compatibility shortcut
-azw suggest <sku>        # compatibility shortcut
-azw available --family B # deployable VM SKUs in a family
-azw price <sku> --region <name>
-                         # estimated retail compute price
-azw quota <sku>         # quota-focused view, sorted by free vCPUs
-azw skus                # discover VM SKU names
-azw geos                # list Azure geographyGroup values
-azw where               # show current Azure account context
-azw doctor              # pass/fail checklist: az install, version, login, token
-azw update              # check for updates and ask before installing
+region=$(azw pick vm B1s --eu -o value) || exit $?
+terraform plan -var="location=$region"
 ```
 
-Run `azw <command> --help` for command-specific flags.
+**PowerShell**
 
-## Useful Flags
-
-| Flag | Purpose |
-|---|---|
-| `--eu`, `--us`, `--asia` | Filter to common geography groups |
-| `--geography <group>` | Filter to any exact Azure `geographyGroup` |
-| `--concurrency <n>` | Parallel ARM requests during scans, default `16` |
-| `--refresh` | Bypass cached location/SKU data |
-| `--price` | Add Azure retail compute estimates to `available` |
-| `--currency <code>` | Currency for pricing, e.g. `USD` or `EUR` |
-| `--os <linux\|windows>` | OS pricing lens for VM compute rates |
-| `--json` | Structured JSON output; progress stays off |
-| `--compact` | One-line JSON for scripts and agents |
-| `--name` | Compatibility alias for `-o name` where name output is supported |
-| `-o, --output <mode>` | Standard output mode: `table`, `json`, `compact`, `value`, or `name` |
-| `--no-policy` | Skip Azure Policy allowed-location checks |
-| `--no-update-check` | Skip the once-per-day release check |
-
-Environment:
-
-- `NO_COLOR=1` disables ANSI colour.
-- `CI=true` disables live redraws and uses log-style progress.
-- `AZ_WHERE_NO_UPDATE_CHECK=1` disables the automatic update check.
-
-Exit codes: `0` success, `1` no deployable region or generic error, `2` Azure auth required, `3` validation error, `4` `azw doctor` found a missing prerequisite.
-
-## Auth And Safety
-
-`az-where` uses the current Azure CLI context. If `az account show` points at a subscription, that is the subscription `az-where` scans. To switch:
-
-```bash
-az account set --subscription "<subscription id or name>"
+```powershell
+$region = azw pick vm B1s --eu -o value
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+terraform plan "-var=location=$region"
 ```
 
-The scanner is read-only. It calls ARM endpoints for locations, policy assignments, VM SKUs, and usage/quota; it never creates, modifies, or deletes Azure resources.
+Use `-o json` for formatted JSON or `-o compact` for one-line JSON. `check` returns an explanation alongside its verdict, and `compare` returns a shared region axis with one result per requested target. See the [JSON contracts](docs/json-contracts.md) for exact fields and exit behavior.
 
-## How It Works
+| Output mode | Where to use it |
+| --- | --- |
+| `table` | Human output |
+| `json`, `compact` | Structured results |
+| `value` | A `check` verdict or a region from `pick` or `suggest` |
+| `name` | Region names from `availability` or `regions`, SKU names from `skus`, or ARM types from `resources` |
 
-`az-where` asks the Azure CLI for a bearer token with `az account get-access-token`, then calls Azure Resource Manager directly over HTTPS.
+### Exit codes
 
-The main read-only ARM calls are:
+| Exit | Meaning |
+| --- | --- |
+| `0` | Command succeeded |
+| `1` | No qualifying result, a blocked check, or a runtime error |
+| `2` | Azure login required |
+| `3` | Input validation failed |
+| `4` | `doctor` found a failed prerequisite |
+| `127` | Azure CLI missing outside the `doctor` checklist |
 
-- `GET /subscriptions/{id}/locations`
-- `GET /subscriptions/{id}/providers/Microsoft.Authorization/policyAssignments`
-- `GET /subscriptions/{id}/providers`
-- `GET /subscriptions/{id}/providers/Microsoft.Compute/skus`
-- `GET /subscriptions/{id}/providers/Microsoft.Compute/locations/{region}/usages`
+Machine output suppresses progress. Set `NO_COLOR=1` for plain terminal output, `CI=true` for log-style progress, or `AZ_WHERE_NO_UPDATE_CHECK=1` to skip automatic GitHub release checks.
 
-Location and SKU responses are cached briefly for faster repeated scans. Policy and quota/usage responses are always live so deployability decisions do not use stale restrictions or quota.
+## Project links
 
-Pricing uses the public Azure Retail Prices API. It is an estimate for VM compute only; disks, bandwidth, taxes, credits, reservations, savings plans, and account-specific discounts are not included.
+| Looking for | Read |
+| --- | --- |
+| Upcoming work, research tasks, and release history | [Roadmap](docs/roadmap.md#work-queue) · [Changelog](CHANGELOG.md) |
+| Command design and script output | [Command standard](docs/command-standard.md) · [JSON contracts](docs/json-contracts.md) |
+| How the CLI works and how to contribute | [Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md) |
 
-## Scripting
-
-```bash
-terraform apply -var="location=$(azw pick vm B1s --eu -o value)"
-```
-
-`pick` exits with code `1` if no region qualifies, including when all otherwise-good regions are blocked by Azure Policy, so deployment scripts fail fast instead of receiving an unusable location.
-
-For machine-readable output:
-
-```bash
-azw availability vm B1s --eu -o compact
-azw check vm B1s --region westeurope -o json
-azw availability resource storage-account --eu -o json
-azw compare vm B1s,B2s,D2s_v5 --eu -o json
-azw compare resource storage-account,key-vault --eu -o json
-azw pick resource storage-account,key-vault --eu -o json
-azw suggest resource storage-account,key-vault --eu --near Luxembourg -o json
-azw verify main.tf -o json
-```
-
-`verify` exits `1` when a checked pair is blocked — a VM pair that cannot deploy, or a generic resource that is not advertised (or policy-denied) in the region its file names — so it can gate a CI step before `terraform apply`; resources with dynamic values are reported as skipped and never fail the run.`
-
-`compare vm` emits a stable matrix contract for choosing fallback sizes: a top-level `regions` axis plus one result per requested SKU with `deployableRegions`, `deployableCount`, and `verdictCounts`, so scripts can walk the SKU order and pick the first that deploys in a target region. `compare resource` emits the same matrix shape for generic resource types — `targets` instead of `skus`, `supportedRegions`/`supportedCount` per type, and `availability` confidence on every row, never deployability. `pick resource` / `suggest resource` emit one `picked` / `suggested` object over the regions that advertise every requested type (`confidence: "availability"`), with a proximity-based reason on `suggest` — `factors` carry `distanceKm` (with `--near`) and `geographyGroup` only, never quota fields.
-
-Field-level JSON shapes for `availability`, `check`, `pick`, `suggest`, `compare`, and `verify` are documented as stable contracts in [docs/json-contracts.md](docs/json-contracts.md), pinned by tests. `check` payloads carry an `explanation` object (`code`, `reason`, `hint`) so agents get the same evidence-based blocker details humans see:
-
-```json
-{
-  "verdict": "FULL",
-  "explanation": {
-    "code": "FULL",
-    "reason": "Standard_B1s needs 2 vCPUs but family standardBSFamily has only 0/4 free in westeurope — 2 vCPUs short.",
-    "hint": "Request a quota increase (Azure Portal → Quotas) or free up vCPUs, then re-check."
-  }
-}
-```
-
-`value` and `name` are intentionally narrower than JSON: they are only enabled on commands where the output has a stable single-value or one-name-per-line meaning. Unsupported combinations fail as validation errors before any Azure calls.
-
-Before running azw in CI, you can gate on the environment itself:
-
-```bash
-azw doctor || exit 1   # exits 4 with a checklist if az/login/token is broken
-```
-
-## Development
-
-```bash
-bun install
-bun run dev -- B1s --eu
-bun run typecheck
-bun test
-```
-
-More details live in [docs/architecture.md](docs/architecture.md), with future ideas in [docs/roadmap.md](docs/roadmap.md). Future command naming and output rules are tracked in [docs/command-standard.md](docs/command-standard.md).
-
-## License
-
-[MIT](LICENSE). See [TRADEMARKS.md](TRADEMARKS.md) for Microsoft/Azure trademark notes.
+[Issues](https://github.com/VidGuiCode/az-where/issues) · [MIT license](LICENSE) · [Trademark notice](TRADEMARKS.md)

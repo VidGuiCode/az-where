@@ -1,202 +1,71 @@
 # Roadmap
 
-Planned improvements and features for upcoming releases. This is a living document: version targets can move based on usage, implementation risk, and feedback.
+[Quick start](../README.md#find-a-region) · [Changelog](../CHANGELOG.md) · [GitHub Issues](https://github.com/VidGuiCode/az-where/issues)
 
-## Released
+`az-where` helps people choose Azure regions for a VM or a set of resources before they deploy. The next step is to answer narrower questions, such as whether Azure advertises a specific Storage account kind and replication SKU in a region for the selected subscription.
 
-### 0.0.1 - Initial CLI
+## Where the project stands
 
-- `azw <sku>` positional shorthand with automatic `Standard_` normalization.
-- `regions`, `quota`, `pick`, `geos`, and `where` commands.
-- Geography shortcuts: `--eu`, `--us`, `--asia`, plus `--geography <group>`.
-- Table, JSON, compact JSON, and name-only output modes.
-- Live progress on TTY, log-line fallback in CI/non-TTY.
+[v0.4.10](https://github.com/VidGuiCode/az-where/releases/tag/v0.4.10) can compare VM sizes using SKU, policy, subscription restrictions, and live VM-family quota. It can also compare generic resource types, pick a region that advertises all of them, and preflight literal Terraform and Bicep values. Generic resource checks currently stop at provider-catalog availability.
 
-### 0.1.0 - ARM Scanner And SKU Discovery
+## Work queue
 
-- Direct ARM REST scanner using a bearer token from the current Azure CLI login.
-- `azw skus` for discovering VM SKU names by geography, family, or single region.
-- Faster region scans with parallel ARM requests.
-- Subscription-blocked verdicts, SKU-not-offered folding, and improved output.
+| Order | Task | Status | Deliverable |
+| --- | --- | --- | --- |
+| 1 | [Research Storage SKU availability](#research-storage-sku-availability) | Ready for research | Evidence from the Storage SKU API and a decision on which verdicts it can support. |
+| 2 | [Build a single-region Storage check](#build-a-single-region-storage-check) | Depends on Storage research | One read-only check for account kind, SKU, and region, with explanations and JSON output. |
+| 3 | [Research PostgreSQL and App Service](#research-postgresql-and-app-service) | Queued | One feasibility note per service, using the same evidence criteria as Storage. |
+| 4 | [Revisit AKS node-size checks](#revisit-aks-node-size-checks) | Deferred | A decision on a supported source for AKS-specific node-size restrictions. |
 
-### 0.2.0 - Updates
+This is the proposed order. Implementation scope and release targets follow the research findings.
 
-- `azw update` command.
-- Background GitHub release check with a 24h cache.
-- Update-check suppression for scripts, CI, JSON/name output, and explicit opt-out.
+## Research Storage SKU availability
 
-### 0.2.1 - Startup UX And Docs
+**User question.** Can my current subscription use a `StorageV2` account with `Standard_ZRS` in the region I’m considering?
 
-- Progress appears immediately during Azure token and region startup work.
-- Startup scan wording now matches the user-facing scan command.
-- README slimmed down into a shorter first-run guide.
+**Starting point.** Microsoft documents a subscription-scoped SKU list with account kinds, SKU names, locations, and restrictions. Use it to investigate which fields establish that a specific combination is advertised or explicitly restricted. [Storage SKUs List API](https://learn.microsoft.com/en-us/rest/api/storagerp/skus/list?view=rest-storagerp-2026-09-01)
 
-### 0.2.2 - Update Fixes
+**Work to do**
 
-- Bare `azw` can now show the post-help update banner.
-- `azw update` forces a fresh GitHub release check instead of trusting the 24h cache.
+1. Compare an advertised kind and SKU combination with a region where the combination is absent or explicitly restricted. Record which response fields explain each result.
+2. Check how region names, pagination, and provider registration affect the result. Probe what a limited-permission account can read when one is available.
+3. Capture representative redacted responses. Include an API failure case through a fixture if it is impractical to reproduce live.
+4. Write a short decision note that maps each evidence case to an advertised, restricted, or unknown outcome. Document whether a missing row is authoritative enough to report an unsupported combination and which conditions remain outside the API’s scope.
 
-### 0.3.0 - Cache And Refresh
+**Done when** another contributor can reproduce the observations and explain what the check would say for an advertised SKU, a region restriction, missing evidence, and a failed request. If the evidence is incomplete, propose a narrower answer or leave Storage on the generic catalog check.
 
-- Persistent cache for locations and SKU data under the user's platform cache directory.
-- `--refresh` flag to bypass cached ARM data.
-- Quota/usage remains live.
+## Build a single-region Storage check
 
-### 0.3.1 - Diagnostics
+Start after the research yields a reliable answer beyond the generic provider catalog. The first version takes an account kind, a SKU, and one region. Keep multi-region scans, comparison, and IaC integration for a follow-up once the single-region result is useful.
 
-- Typed ARM HTTP errors with status, endpoint, ARM code, and ARM message.
-- Better human and JSON diagnostics for ARM failures.
+- Reuse the Azure session, ARM client, region resolution, and allowed-location policy handling where their behavior fits. Explain whether policy was evaluated.
+- Print the observed result and its reason. In JSON, include the requested inputs, evaluated evidence, and the applicable confidence. Specify the exit behavior for positive, negative, and inconclusive results before exposing it to scripts.
+- Preserve the existing generic `resource` commands and their JSON payloads. Report Storage SKU and location evidence at the confidence it supports. Account quota, live capacity, and other deployment constraints remain outside this first check unless independently verified and documented.
+- Test advertised, restricted, unlisted, and unavailable-evidence responses with fixtures. Verify that invalid inputs fail before an Azure call and that JSON stays parseable on stdout.
+- Update command help, the README examples, the JSON contract, and the changelog. Record a read-only live verification against an authorized Azure subscription before release.
 
-### 0.3.2 - Suggest And Near
+## Research PostgreSQL and App Service
 
-- `azw suggest <sku>`: one recommended region plus a short explanation of why it was chosen.
-- `--near <city>` for location-aware suggestions using a built-in coordinate list.
+Use the Storage research format for each service. Record the user question, API scope, minimum permissions where known, a positive and a negative or inconclusive example, and the verdict the evidence supports.
 
-### 0.3.3 - Docs And Legal
+| Service | First question | Starting point |
+| --- | --- | --- |
+| PostgreSQL Flexible Server | Is a requested compute SKU advertised for this subscription and region? Determine whether the response distinguishes a missing SKU from a service restriction before considering HA or capacity. | [Capabilities by Location API](https://learn.microsoft.com/en-us/rest/api/postgresql/capabilities-by-location/list?view=rest-postgresql-2026-10-01) |
+| App Service | Does the region appear for the requested plan SKU and Linux worker requirement? Verify what the SKU and worker filters actually establish before treating absence as definitive. | [List Geo Regions API](https://learn.microsoft.com/en-us/rest/api/appservice/list-geo-regions/list-geo-regions?view=rest-appservice-2026-07-15) |
 
-- README "How It Works" section.
-- Architecture refresh for ARM REST, cache, and suggest behavior.
-- `TRADEMARKS.md` and final unofficial-disclaimer audit.
+**Done when** each note recommends a command, a narrower result, or keeping the existing generic behavior. Each proposed command should identify the exact claim the API can support.
 
-### 0.3.4 - Updater UX
+## Revisit AKS node-size checks
 
-- `azw update` asks before installing newer releases.
-- Bare `azw` can surface the same interactive update prompt after help.
+An AKS node-size check needs evidence that the size can be used in a node pool. Microsoft documents `az aks list-vm-skus` as a preview feature. Use it as a research reference and look for a supported, read-only source before making it part of the normal CLI workflow. [AKS VM SKU discovery documentation](https://learn.microsoft.com/en-us/azure/aks/aks-list-skus)
 
-### 0.3.5 - Azure Policy Accuracy
+**Done when** a feasibility note explains which AKS-specific restrictions can be observed, how those relate to the existing VM quota and SKU checks, and whether the resulting confidence is useful enough to ship. While deferred, `availability resource aks` remains the catalog-level check.
 
-- Azure Policy allowed-location checks for scan commands.
-- `POLICY_DENIED` verdicts so `pick` and `suggest` do not return policy-blocked regions.
-- `--no-policy` escape hatch and policy metadata in JSON output.
+## Longer-term ideas
 
-### 0.3.6 - Deployable Family Search
+- **Shell and CI helpers.** Evaluate small snippets built around `pick -o value` and `verify -o json` once there is a concrete workflow that needs them.
+- **Other clouds.** Revisit expansion after service-specific Azure checks have established a reusable way to represent provider evidence and uncertainty.
 
-- `azw available --family <prefix>` for finding deployable VM SKUs in a family.
-- Default output shows only SKUs/regions that pass policy, SKU restrictions, and live quota.
-- `--all` exposes blocked candidates and quota checks now require enough free vCPUs for the selected SKU.
+## How roadmap tasks become issues
 
-### 0.3.7 - Pricing
-
-- `azw price <sku> --region <name>` for retail compute price estimates.
-- `azw available --price` to compare deployable family options with hourly and monthly estimates.
-- Pricing remains optional enrichment and never changes deployability verdicts.
-
-### 0.4.0 - Availability Discovery Foundation
-
-- Reframe public docs from VM-only wording to Azure availability discovery with deep VM support.
-- Introduce canonical explicit VM forms while preserving existing shortcuts:
-  - `azw availability vm <sku> [--region <name>|--eu|--us|--asia|--geography <group>]`
-  - `azw pick vm <sku> [scope]`
-  - `azw suggest vm <sku> [scope]`
-- Add generic resource availability discovery:
-  - `azw availability resource <alias-or-type> [--region <name>|--eu|--us|--asia|--geography <group>]`
-  - `azw check resource <alias-or-type> --region <name>`
-- Add friendly aliases for common Azure resource types, starting with `storage-account`, `key-vault`, `web-app`, `app-service-plan`, `aks`, and `postgres-flexible-server`.
-- Keep verdicts honest by distinguishing generic resource availability from full deployability.
-- Standardize output with `--output` / `-o`:
-  - `-o table`
-  - `-o json`
-  - `-o compact`
-  - `-o value`
-  - `-o name`
-- Keep `--json`, `--compact`, and `--name` as compatibility aliases.
-
-### 0.4.1 - Syntax Polish And Help Order
-
-- Polish help text so canonical syntax is taught first and VM shortcuts are clearly labeled as compatibility aliases.
-- List `availability`, `check`, `pick`, and `suggest` before legacy VM-specific commands in top-level help.
-- Clarify `pick` and `suggest` argument labels around `vm <sku>` canonical syntax.
-- Update legacy command descriptions to point toward `azw availability vm <sku>`.
-
-### 0.4.2 - Real-World Smoke And Output Hardening
-
-- Tighten `--output` / `-o` support across all commands, especially unsupported `value`/`name` modes.
-- Add command-specific supported-mode errors before Azure calls start.
-- Keep script output modes quiet: JSON carries policy metadata, while `value` and `name` emit only their intended values.
-- Recognize compact shorthand forms such as `-ocompact` as machine output for progress/update suppression.
-- Add smoke coverage for invalid output-mode combinations that should fail before Azure calls.
-- Live-smoke canonical generic resource checks against ARM provider metadata and policy-restricted subscriptions.
-
-### 0.4.3 - Resource Discovery And Release Automation
-
-- `azw resources` to discover Azure resource types, with `--namespace` and `--grep` filters and `table`/`json`/`name` output, reusing the cached provider catalog.
-- Tag-triggered GitHub Action that builds, tests, packs, and publishes the release tarball on every `v*` tag push.
-
-### 0.4.4 - Environment Doctor
-
-- `azw doctor` to verify local prerequisites before any Azure scan: Azure CLI installed, a supported `az` version, an active login, a default subscription, and a mintable ARM token.
-- Clear pass/fail checklist with install and `az login` hints, `-o json` for scripts, and a distinct non-zero exit code (`4`) when a prerequisite is missing so CI can gate on it.
-- Surfaces the existing `AzNotInstalledError` / `AzNotLoggedInError` signals up front instead of only on the first failing command. Top-level diagnostic command, outside the verb/kind grammar (like `update`).
-- Token checks report only expiry and tenant metadata; the bearer token itself never appears in any doctor output.
-
-### 0.4.5 - VM Comparison
-
-- `azw compare vm B1s,B2s,D2s_v5 --eu` renders a region × size matrix of deployability verdicts (policy, subscription restrictions, SKU offers, and live vCPU quota per cell).
-- Comparing N sizes costs the same ARM calls as a single-SKU scan: the per-region SKU catalog covers every requested size.
-- Stable JSON contract for agents and scripts choosing fallback sizes: shared `regions` axis plus one result per SKU with `deployableRegions`, `deployableCount`, and `verdictCounts`.
-- Human table sorts regions where every requested size deploys to the top, then by per-region coverage, with a per-SKU deployability summary.
-- Supports `--output table|json|compact`; `value` and `name` are rejected as validation errors because a comparison has no single script value.
-- Scope flags match `availability vm` (`--region`, `--eu`, `--us`, `--asia`, `--geography`, `--no-policy`, `--refresh`).
-- Compare stays VM-only in this release; resource comparison is deferred.
-
-### 0.4.6 - Check Explanations And JSON Contracts
-
-- `azw check vm` and `azw check resource` print evidence-based blocker details: a factual `Reason` line and an actionable `Hint` under the verdict table, covering `POLICY_DENIED`, `BLOCKED_FOR_SUB` (with the ARM restriction reason code), `FULL` (with the vCPU shortfall; concept name in older notes: `QUOTA_FULL`), `SKU_NOT_OFFERED` (with same-series sizes the region does list), `QUOTA_UNKNOWN` (missing usage row vs. failed ARM call), `RESOURCE_SUPPORTED`, and `RESOURCE_NOT_SUPPORTED` (with its cause: provider missing, type missing, or region not advertised).
-- Verdict rows carry the evidence behind the reasons (`requiredVcpus`, `skuRestrictions`, `familySizesOffered`, `errorDetail`, `providerRegistered`, `typeLocationCount`, `notSupportedCause`), all additive at `schemaVersion: 1`.
-- Availability footers summarize blockers when nothing deploys, and `pick` / `suggest` failures explain the closest miss.
-- Stable JSON shapes documented in `docs/json-contracts.md` for `availability vm`, `availability resource`, `check vm`, `check resource`, `pick vm`, and `suggest vm`, with payload builders (`src/core/payloads.ts`) and contract tests pinning every field name; check payloads carry a top-level `explanation` object.
-- Explanations stayed factual: generic resource checks state availability, not deployability, and never claim full deployability.
-
-### 0.4.7 - IaC Preflight
-
-- `azw verify <files...>` for Terraform (`.tf`) and Bicep (`.bicep`) files: parse every statically-known VM `location + size` pair and check it before `terraform apply` or a Bicep deployment.
-- Verdicts, evidence, and explanations are identical to `azw check vm`; scale-set `capacity` multiplies the vCPU requirement.
-- Dynamic values (`var.location`, interpolation, `resourceGroup().location`) are reported as skipped findings with the raw expression echoed — never guessed. Skips never fail the run: exit `1` only when a checked pair is blocked.
-- Covers Terraform VMs (including legacy `vm_size`) and virtual machine scale sets, plus the Bicep equivalents; generic resource types inside IaC files are deferred until resource verdicts mature.
-- Stable JSON contract with `kind: "verify"`: `files`, `formats`, `summary`, per-pair `results[]` rows carrying source metadata + the pinned verdict row + `explanation`, and a `skipped[]` findings list.
-
-### 0.4.8 - Verify Generic Resources
-
-- `azw verify` broadens beyond VMs: statically-known `type + location` pairs for common generic resources — storage accounts, key vaults, web/function apps, service plans, AKS clusters, PostgreSQL flexible servers — are checked against the ARM provider catalog with availability confidence (never deployability); verdicts, evidence, and explanations are identical to `azw check resource`.
-- A curated Terraform/Bicep type-mapping table (`IAC_GENERIC_RESOURCE_TYPES`) over the standard resource aliases, kept in sync by a test; unmapped types stay ignored, and dynamic locations become skipped findings exactly like VMs.
-- All generic pairs share one cached provider-catalog call per run, so the cost stays flat regardless of how many resources the files contain.
-- Additive JSON contract at `schemaVersion: 1`: a `genericResources` section (`seen`, `checked`, `skipped`, `supportedCount`, `verdictCounts`, `results`, `skippedFindings`) keeps the VM `summary` / `results` / `skipped` fields' meaning unchanged.
-- Exit `1` when a checked VM pair is blocked or a generic resource is not advertised / policy-denied in its region; skips still never fail the run.
-- CI workflows bumped to `actions/checkout@v5` and `actions/setup-node@v5` ahead of `ubuntu-latest` moving to Ubuntu 26 (2026-10-19).
-
-### 0.4.9 - Resource Comparison
-
-- `azw compare resource storage-account,key-vault,aks --eu`: a region × type matrix of generic resource availability verdicts, mirroring `compare vm` (0.4.5) with the resource vocabulary (`RESOURCE_SUPPORTED` / `RESOURCE_NOT_SUPPORTED` / `POLICY_DENIED`) and `availability` confidence on every row — never deployability.
-- Accepts the same friendly aliases and raw Azure resource types as `availability resource`; targets are validated, deduplicated (case-insensitive on the resolved type), and capped (30 per invocation, like `compare vm`) before any Azure call.
-- Reuses the provider-catalog engine split out in 0.4.8 (`classifyResourceType` + `listProviderCatalog` in `src/core/resources.ts`): one shared catalog call per run, so comparing N types costs the same as one `check resource` scan. No `--concurrency` flag — there is nothing to parallelize.
-- Stable JSON contract (`kind: "compare"`, `resourceKind: "resource"`, `confidence: "availability"`, additive at `schemaVersion: 1`): a shared `regions` axis plus one `results[]` entry per target in request order carrying `target`, `resolved` (`{input, resourceType, alias, namespace, typePath}`), per-region rows, `supportedRegions`, `supportedCount`, and `verdictCounts`. The VM compare payload is untouched.
-- Human table ranks regions where every requested type is supported first, with a legend (including the availability-not-deployability caveat) and a per-type `supported in X/Y regions` summary; `value` and `name` are rejected as validation errors before any Azure call.
-- Scope flags match `availability resource` (`--region`, `--eu`, `--us`, `--asia`, `--geography`, `--no-policy`, `--refresh`).
-- Exit `1` when no requested type is supported in any region.
-
-### 0.4.10 - Resource Pick And Suggest
-
-- `azw pick resource storage-account,key-vault --eu`: one script-value region where **every** requested type is `RESOURCE_SUPPORTED` (a single target degenerates to the simple case). Targets reuse `parseResourceTargetList` from compare resource (validated, deduplicated case-insensitively, capped at 30) and the same one-catalog-call engine (`classifyCompareResources`); no `--concurrency`.
-- Selection mirrors `pick vm`: first region in the stable geography-group-then-name axis where all types are supported (`allSupportedRegionRows(...)[0]`). Default human output is the bare region name, like `pick vm`; `-o value` is allowed (same bare name), `-o name` is rejected; on failure `-o json` prints the payload with `picked: null` and exit `1`, and the human path explains the closest miss (the requested type supported in the fewest scanned regions).
-- `azw suggest resource storage-account,key-vault --eu [--near <city>]`: one human recommendation with a reason. Scoring has no quota signal, so it is proximity-based: `--near` ranks supported regions by haversine distance via the existing `PLACES` table (score `-distanceKm`), otherwise all candidates tie at 0 and region order wins. The reason always states that all N requested types are advertised there and carries the availability-not-deployability caveat; `factors` carries `distanceKm` (with `--near`) and `geographyGroup` only — no `free`/`limit` (absent by contract on resource rows).
-- Grammar dispatch: `azw pick resource <targets>` / `azw suggest resource <targets>` route through the existing positional dispatchers (`resolveVmTarget` gains a `resource` branch); the `azw pick <sku>` / `azw suggest <sku>` VM shortcuts are untouched, and no new shortcut grammar is added for resources.
-- Stable JSON contracts (additive at `schemaVersion: 1`, built via `src/core/payloads.ts`): pick resource carries `kind: "pick"`, `resourceKind: "resource"`, `confidence: "availability"`, `targets`, `resolved[]` (one per target), `cache`, `policy`, and `picked: {region, displayName, geographyGroup} | null`; suggest resource carries `kind: "suggest"`, the same envelope fields plus `geography`, `near`, `elapsedMs`, and `suggested: {region, displayName, reason, score, factors} | null`. The VM pick/suggest payloads are untouched.
-- Scope flags match `pick vm` / `suggest vm` (`--eu`, `--us`, `--asia`, `--geography`, `--no-policy`, `--refresh`, plus `--near` on suggest). No `--region`: scoping to one region is `check resource`'s job.
-- Exit codes: `0` on success, `1` when no region in scope advertises every requested type (payload still printed in JSON modes), `3` validation.
-- `verify-pack` unsets `npm_config_allow_scripts` before its nested project-scoped install — npm 11 rejects the inherited flag there (`EALLOWSCRIPTS`).
-
-## Planned
-
-### Later
-
-- Deep service-specific checks beyond VMs, only after API research confirms reliable signals:
-  - `azw check storage --kind StorageV2 --replication LRS --region <name>`
-  - `azw check postgres --sku B_Standard_B1ms --region <name>`
-  - `azw check aks --node-size B2s --region <name>`
-  - `azw check appservice --plan B1 --region <name>`
-- Optional tiny script snippets or env output, not full deployment generation.
-- Possible multi-cloud modules if the Azure workflow proves stable first.
-
-See [command-standard.md](command-standard.md) for command naming, output, and verdict rules.
-
-Feedback and suggestions welcome via [GitHub Issues](https://github.com/VidGuiCode/az-where/issues).
+Use the [contributor guide](../CONTRIBUTING.md#turn-roadmap-work-into-an-issue) when turning a task into a GitHub issue. Keep research and implementation work separate when the API evidence can change the design. Use the [command standard](command-standard.md) and [JSON contracts](json-contracts.md) for any public CLI changes.

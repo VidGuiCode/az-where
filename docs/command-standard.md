@@ -1,136 +1,55 @@
-# CLI Command Standard
+# CLI command standard
 
-This document keeps future `azw` command design consistent as the tool grows from deep VM checks into broader Azure availability discovery.
+[README](../README.md) · [Architecture](architecture.md) · [JSON contracts](json-contracts.md)
 
-## Product Boundary
+`azw` reads Azure metadata and turns it into availability verdicts. Keep Azure operations read-only, delegate authentication to `az`, and show the confidence supported by the evidence.
 
-`azw` is a read-only availability discovery CLI.
-
-It should answer:
-
-- what Azure regions exist for the current subscription
-- whether a resource capability is advertised in a region
-- whether a VM SKU can actually deploy in a region
-- why a region is blocked when Azure exposes enough signal
-- what location a deployment script should use
-
-It should not:
-
-- create Azure resources
-- modify Azure resources
-- replace `az`, Terraform, Bicep, Pulumi, or CI/CD deployment systems
-- hide uncertainty when Azure APIs do not expose enough information
-
-The clean split is:
+## Command grammar
 
 ```text
-az gives raw Azure facts and performs operations.
-azw combines read-only facts into availability answers for humans and scripts.
+azw <verb> <kind> <target> [scope] [output options]
 ```
 
-## Why azw Exists When az Already Exists
+| Verb | Intent | Example |
+| --- | --- | --- |
+| `check` | Explain one target’s verdict in one region | `azw check vm B1s --region westeurope` |
+| `availability` | Scan regions for one target | `azw availability resource storage-account --eu` |
+| `compare` | Compare several targets across regions | `azw compare vm B1s,B2s,D2s_v5 --eu` |
+| `pick` | Return a region name for automation | `azw pick resource storage-account,key-vault --eu -o value` |
+| `suggest` | Recommend a region and explain the choice | `azw suggest vm B1s --eu --near Luxembourg` |
 
-Azure CLI already exposes most building blocks:
+Use `vm` for VM SKU checks and `resource` for provider-catalog checks. Use existing verbs for new intents when they fit. A new resource kind warrants distinct service-specific evidence. Keep generic catalog checks under `resource`.
 
-| Need | Raw Azure CLI shape |
-|---|---|
-| List subscription locations | `az account list-locations` |
-| Inspect providers/resource types | `az provider list`, `az provider show` |
-| Inspect VM SKU availability | `az vm list-skus --location <region>` |
-| Inspect VM quota/usage | `az vm list-usage --location <region>` |
-| Script output | `--output json`, `--output tsv` |
+`compare` takes a comma-separated list of VM SKUs or resource targets. Resource `pick` and `suggest` also accept a comma-separated list and require every target to be advertised in the chosen region. A single resource target works with either command.
 
-The problem is that users often need several commands, repeated region loops, and manual interpretation.
+### Commands outside the grammar
 
-`azw` should turn that into one focused answer:
+| Command | Purpose |
+| --- | --- |
+| `verify <files...>` | Preflight supported resources in Terraform or Bicep using literal values |
+| `geos`, `skus`, `resources` | Discover geography groups, VM sizes, and ARM resource types |
+| `available`, `quota`, `price` | Explore VM family deployability, vCPU headroom, and retail compute pricing |
+| `where`, `doctor`, `update` | Inspect account context, check prerequisites, or check for a newer release |
 
-```bash
-azw check vm B1s --region westeurope -o json
-azw availability resource storage-account --eu
-azw pick vm B1s --eu -o value
-```
+`verify` takes its regions from the supplied files. Report dynamic values with their source location and mark them skipped. Exit `1` when any checked pair is blocked. Skipped findings alone permit exit `0`.
 
-## Canonical Grammar
+### VM compatibility
 
-Future docs and new commands should teach one grammar:
+Teach explicit commands in new examples. Preserve these shortcuts for existing users. New resource kinds use the explicit grammar.
 
-```text
-azw <verb> <kind> <target> [scope flags] [output flags]
-```
+| Shortcut | Canonical form |
+| --- | --- |
+| `azw B1s --eu` | `azw availability vm B1s --eu` |
+| `azw regions B1s --eu` | `azw availability vm B1s --eu` |
+| `azw pick B1s --eu` | `azw pick vm B1s --eu` |
+| `azw suggest B1s --eu` | `azw suggest vm B1s --eu` |
 
-Examples:
+## Resource targets
 
-```bash
-azw check vm B1s --region westeurope
-azw availability vm B1s --eu
-azw pick vm B1s --eu
-azw suggest vm B1s --eu --near Luxembourg
-azw pick resource storage-account,key-vault --eu
-azw suggest resource storage-account,key-vault --eu --near Luxembourg
-azw compare vm B1s,B2s,D2s_v5 --eu
-azw compare resource storage-account,key-vault --eu
+Prefer lowercase, kebab-case aliases that describe the resource. Keep raw ARM type strings valid, for example `azw check resource Microsoft.Storage/storageAccounts --region westeurope`.
 
-azw check resource storage-account --region westeurope
-azw availability resource storage-account --eu
-```
-
-The grammar should feel the same for VMs and non-VM resources. Avoid teaching one shape for VMs and a different shape for everything else.
-
-## Verbs
-
-Keep the verb list small.
-
-| Verb | Meaning |
-|---|---|
-| `check` | Check one target in exactly one region |
-| `availability` | Scan one target across multiple regions |
-| `pick` | Return one best script value |
-| `suggest` | Return one human recommendation with a reason |
-| `compare` | Compare multiple targets across multiple regions |
-| `verify` | Inspect an IaC file before deployment |
-
-Do not add new verbs unless an existing verb cannot describe the user intent.
-
-`compare` covers VM sizes (`azw compare vm <sku-list> [scope]`, 0.4.5) and generic resource types (`azw compare resource <targets> [scope]`, 0.4.9 — the resource matrix emits availability verdicts and confidence on every row, never deployability). It supports `table`, `json`, and `compact`; `value` and `name` are rejected as validation errors because a comparison of several targets has no single script value or one-name-per-line meaning.
-
-`verify` (`azw verify <files...>`) takes one or more `.tf` / `.bicep` file paths — no scope flags, because the regions come from the files. It parses statically-literal pairs and checks them before deployment:
-
-- VM `location + size` pairs (VMs and scale sets, since 0.4.7) run through the same deployability chain as `check vm`; scale-set `capacity` multiplies the vCPU requirement.
-- Generic `type + location` pairs (since 0.4.8) — storage accounts, key vaults, web/function apps, service plans, AKS clusters, PostgreSQL flexible servers, via a Terraform/Bicep type-mapping table over the standard resource aliases — run through the provider-catalog availability engine of `check resource`. Those rows carry `availability` confidence and never claim deployability.
-
-Dynamic values (`var.location`, `"${var.size}"`, `resourceGroup().location`) are reported as skipped findings with the raw expression echoed, never guessed. `value` and `name` are rejected as validation errors. Exit `1` only when a checked pair is blocked (a blocked VM pair, or a generic resource that is not advertised or policy-denied in its region); skips and zero-checkable-files runs exit `0` so variable-driven files stay a warning, not a CI gate.
-
-## Kinds
-
-Start with only:
-
-| Kind | Meaning |
-|---|---|
-| `vm` | Deep VM SKU deployability checks |
-| `resource` | Generic Azure resource type availability checks |
-
-Do not use `provider` as the user-facing kind. Provider is Azure's internal language; users think in resources.
-
-The raw Azure provider/resource type should still be accepted as an expert target:
-
-```bash
-azw check resource Microsoft.Storage/storageAccounts --region westeurope
-```
-
-But docs should prefer friendly aliases:
-
-```bash
-azw check resource storage-account --region westeurope
-```
-
-## Resource Aliases
-
-Common resources should have stable friendly aliases that map to Azure resource type strings.
-
-Initial alias table:
-
-| Alias | Azure resource type |
-|---|---|
+| Alias | ARM resource type |
+| --- | --- |
 | `storage-account` | `Microsoft.Storage/storageAccounts` |
 | `key-vault` | `Microsoft.KeyVault/vaults` |
 | `web-app` | `Microsoft.Web/sites` |
@@ -138,249 +57,39 @@ Initial alias table:
 | `aks` | `Microsoft.ContainerService/managedClusters` |
 | `postgres-flexible-server` | `Microsoft.DBforPostgreSQL/flexibleServers` |
 
-Rules:
-
-- Aliases are lowercase kebab-case.
-- Aliases should name the common Azure resource, not the provider namespace.
-- Raw Azure resource type strings remain valid for advanced users.
-- Do not create deep service behavior just because an alias exists. Alias availability is only generic resource discovery unless a deeper command is implemented.
-
-## Compatibility Rule
-
-Existing VM commands must keep working:
-
-```bash
-azw B1s --eu
-azw regions B1s --eu
-azw pick B1s --eu
-azw suggest B1s --eu --near Luxembourg
-azw quota B1s --eu
-azw available --family B --eu
-azw skus --eu --family B
-azw price B2ats_v2 --region swedencentral
-```
-
-These are compatibility shortcuts for the current VM surface. They should remain supported, but new docs should prefer canonical explicit forms:
-
-| Compatibility shortcut | Canonical form |
-|---|---|
-| `azw B1s --eu` | `azw availability vm B1s --eu` |
-| `azw regions B1s --eu` | `azw availability vm B1s --eu` |
-| `azw pick B1s --eu` | `azw pick vm B1s --eu` |
-| `azw suggest B1s --eu` | `azw suggest vm B1s --eu` |
-
-Do not add new shortcut grammars for new resource kinds.
-
-## Top-Level Command Rule
-
-Avoid new top-level resource nouns.
-
-Do not add this early:
-
-```bash
-azw storage ...
-azw postgres ...
-azw aks ...
-azw appservice ...
-```
-
-Use generic resource availability first:
-
-```bash
-azw availability resource storage-account --eu
-azw check resource aks --region westeurope
-```
-
-Promote a resource to a first-class kind only when it has enough deep, service-specific logic to justify it.
-
-For example, a future `storage` kind would need to check more than generic resource-type availability:
-
-```bash
-azw check storage --kind StorageV2 --replication LRS --region westeurope
-```
-
-Until then, keep it under `resource`.
-
-## Diagnostic Commands
-
-The verb/kind grammar governs Azure availability discovery. A small set of top-level diagnostic commands sit outside it because they describe the tool or the local environment, not a target resource:
-
-| Command | Purpose |
-|---|---|
-| `azw update` | Check for and install a newer az-where release |
-| `azw doctor` | Pass/fail checklist of local prerequisites: az installed, supported version, login, default subscription, ARM token |
-
-Rules for this family:
-
-- They support the standard output modes where meaningful (`doctor` supports `table`, `json`, and `compact`) and reject opt-in modes (`value`, `name`) as validation errors.
-- `doctor` exits `4` when any prerequisite fails, distinct from auth (`2`) and validation (`3`), so CI can gate on the environment without parsing output.
-- `doctor` never prints credentials; the ARM token check reports only expiry and tenant metadata.
-
-## Scope Flags
-
-Scope flags should be consistent across commands:
+## Scope
 
 | Flag | Meaning |
-|---|---|
-| `--region <name>` | Check exactly one Azure region |
-| `--eu` | Europe shortcut |
-| `--us` | United States shortcut |
-| `--asia` | Asia Pacific shortcut |
-| `--geography <group>` | Exact Azure `geographyGroup` |
-| `--near <city>` | Ranking hint for recommendation commands |
-| `--refresh` | Bypass low-risk cached list data |
-| `--no-policy` | Skip Azure Policy allowed-location checks when relevant |
+| --- | --- |
+| `--region <name>` | One Azure region. Required for `check` and optional for supported scans. |
+| `--eu`, `--us`, `--asia` | Select Europe, US, or Asia Pacific. |
+| `--geography <group>` | Select an Azure geography group. Use `azw geos` to discover names. |
+| `--near <city>` | Rank suggestions using distance when coordinates are known. |
+| `--concurrency <n>` | Adjust parallelism on commands that fan out across regions. |
+| `--refresh` | Bypass cached ARM lists. |
+| `--no-policy` | Skip the allowed-location lookup on commands with policy checks. |
 
-Commands that require one region should fail with a validation error if a broad geography flag is used instead.
+Keep exact-region and broad geography flags mutually exclusive. Use geography flags for `pick` and `suggest`.
 
-Commands that scan multiple regions should accept geography filters.
+## Output
 
-## Output Standard
-
-All user-facing discovery commands should support a machine-readable mode.
-
-Standard output flag:
-
-```bash
---output table|json|compact|value|name
--o table|json|compact|value|name
-```
-
-`-o` should behave like Azure CLI's output shorthand. It should be available anywhere `--output` is available.
-
-Output modes:
+Use `-o` and `--output` for the same option. Reject unsupported modes before Azure calls.
 
 | Mode | Meaning |
-|---|---|
-| `table` | Human-readable default output |
-| `json` | Pretty structured JSON |
-| `compact` | One-line structured JSON |
-| `value` | Exactly one shell-friendly value; fail if there is no single value |
-| `name` | One resource or region name per line |
+| --- | --- |
+| `table` | Default human output |
+| `json` | Structured JSON on stdout |
+| `compact` | The same result as `json` on one line |
+| `value` | One verdict from `check` or one region from `pick` or `suggest` |
+| `name` | One qualifying name per line on `availability`, `regions`, `skus`, and `resources` |
 
-Compatibility mapping:
+Keep stdout parseable and send progress and errors to stderr. Suppress progress and advisory messages in machine output. Preserve supported compatibility flags `--json`, `--json --compact`, and `--name`. Prefer `-o compact` in new examples. For versioned machine output, follow the [JSON stability rules](json-contracts.md#stability-rules).
 
-| Current flag | Equivalent standard form |
-|---|---|
-| `--json` | `--output json` |
-| `--json --compact` | `--output compact` |
-| `--name` | `--output name` |
+## Verdicts and confidence
 
-Rules:
+| Check | Confidence | Verdicts |
+| --- | --- | --- |
+| VM | `deployability` | `AVAILABLE`, `FULL`, `SKU_NOT_OFFERED`, `BLOCKED_FOR_SUB`, `POLICY_DENIED`, `QUOTA_UNKNOWN` |
+| Generic resource | `availability` | `RESOURCE_SUPPORTED`, `RESOURCE_NOT_SUPPORTED`, `POLICY_DENIED` |
 
-- Human output goes to stdout.
-- Progress goes to stderr.
-- JSON/value modes suppress progress.
-- `value` and `name` are opt-in per command; unsupported combinations must fail with a validation error before Azure calls start.
-- Scripts should have stable fields and stable exit codes.
-- `value` should emit exactly one shell-friendly value or fail.
-- `name` should emit one resource or region name per line.
-- `json`, `compact`, `value`, and `name` should avoid extra stderr notes unless stderr is carrying a fatal error.
-- Human tables can change cosmetically; JSON field names should not change casually.
-- Field-level JSON shapes for the contract-documented commands live in [json-contracts.md](json-contracts.md).
-- `--output` / `-o` should be preferred in new docs and examples.
-- Existing `--json`, `--compact`, and `--name` flags should remain as compatibility aliases.
-
-## Verdict Standard
-
-VM checks can produce strong deployability verdicts because `azw` can combine SKU, subscription restriction, quota, and policy signals.
-
-Generic resource checks should use availability/confidence verdicts instead of pretending full deployability is known.
-
-Implemented verdict vocabulary (the exact strings commands emit — see [json-contracts.md](json-contracts.md) for the full contract):
-
-| Verdict | Kind | Meaning |
-|---|---|---|
-| `AVAILABLE` | VM | Offered, unrestricted, policy-allowed, and quota fits |
-| `FULL` | VM | Quota for the size's family is insufficient (concept name in older notes: `QUOTA_FULL`) |
-| `SKU_NOT_OFFERED` | VM | Size is not listed in the region's SKU catalog |
-| `BLOCKED_FOR_SUB` | VM | Azure restricts the size for this subscription |
-| `POLICY_DENIED` | VM, resource | Azure Policy allowed-location assignment excludes the region |
-| `QUOTA_UNKNOWN` | VM | Quota state could not be read |
-| `RESOURCE_SUPPORTED` | resource | Provider catalog advertises the region for the type |
-| `RESOURCE_NOT_SUPPORTED` | resource | Provider catalog does not advertise the region for the type |
-
-`LOCATION_SUPPORTED`, `SKU_SUPPORTED`, and `UNKNOWN_SERVICE_RULES` are reserved vocabulary for future kinds; no command emits them today.
-
-Every check JSON result includes (single-region `check` commands carry one row object in `checks`; scans carry `regions[]`):
-
-```json
-{
-  "kind": "check",
-  "resourceKind": "vm",
-  "target": "Standard_B1s",
-  "region": "westeurope",
-  "verdict": "AVAILABLE",
-  "confidence": "deployability",
-  "checks": { "region": "westeurope", "verdict": "AVAILABLE" },
-  "explanation": { "code": "AVAILABLE", "reason": "…", "hint": null }
-}
-```
-
-Confidence values:
-
-| Confidence | Meaning |
-|---|---|
-| `deployability` | Strong enough to use for deployment script selection |
-| `availability` | Azure advertises support, but not all deployability checks are known |
-| `unknown` | Reserved; not emitted by any command today |
-
-## Proposed Command List
-
-### Canonical Near-Term Commands
-
-| Command | Purpose |
-|---|---|
-| `azw availability vm <sku> [scope]` | Deep VM regional deployability table |
-| `azw check vm <sku> --region <name>` | One-region VM deployability verdict |
-| `azw pick vm <sku> [scope]` | Script-first VM region picker |
-| `azw suggest vm <sku> [scope]` | Human VM recommendation |
-| `azw compare vm <sku-list> [scope]` | Matrix across VM sizes and regions |
-| `azw compare resource <target-list> [scope]` | Matrix across generic resource types and regions |
-| `azw availability resource <alias-or-type> [scope]` | Generic resource availability scan |
-| `azw check resource <alias-or-type> --region <name>` | One-region generic resource availability check |
-| `azw pick resource <target-list> [scope]` | Script-first region picker for generic resource types (one region advertising every requested type; availability, not deployability) |
-| `azw suggest resource <target-list> [scope] [--near <city>]` | Human recommendation for generic resource types (proximity-based; availability, not deployability) |
-
-### Existing VM Compatibility Commands
-
-| Command | Status | Notes |
-|---|---|---|
-| `azw <sku>` | keep | Shortcut for `azw availability vm <sku>` |
-| `azw regions <sku>` | keep | Legacy name for VM availability |
-| `azw pick <sku>` | keep | Shortcut for `azw pick vm <sku>` |
-| `azw suggest <sku>` | keep | Shortcut for `azw suggest vm <sku>` |
-| `azw quota <sku>` | keep | VM quota lens |
-| `azw available --family <prefix>` | keep | Deployable VM SKU family search |
-| `azw skus` | keep | VM SKU discovery |
-| `azw price <sku> --region <name>` | keep | VM compute price estimate |
-
-### Later, After API Research
-
-| Command | Purpose |
-|---|---|
-| `azw check storage --kind <kind> --replication <type> --region <name>` | Deep storage availability check |
-| `azw availability storage --kind <kind> --replication <type> [scope]` | Deep storage scan |
-| `azw check postgres --sku <sku> --region <name>` | Deep PostgreSQL availability check |
-| `azw check aks --node-size <sku> --region <name>` | AKS availability with VM node-size check |
-| `azw check appservice --plan <sku> --region <name>` | App Service plan availability check |
-
-## Naming Decisions
-
-Use `resource`, not `provider`, in user-facing commands.
-
-Use friendly resource aliases first, raw Azure resource types second.
-
-Use `availability`, not `regions`, for the canonical scan verb. `regions` remains a VM compatibility command.
-
-Use `compare`, not `matrix`, for the command name. Matrix describes one output format; compare describes the user intent.
-
-Use `check` for exactly one target in exactly one region.
-
-Use `availability` for scanning one target across many regions.
-
-Use `pick` only when the command emits one best script value.
-
-Use `suggest` only when the command explains a human recommendation.
-
-Do not add new shortcuts for new resource kinds.
+Use observed facts in explanations and provide a hint when there is a concrete next step. VM checks combine known SKU, subscription, policy, and VM-family quota signals. Generic resource results describe locations advertised for a type. The [verdict vocabulary](json-contracts.md#verdict-vocabulary) defines each code.
