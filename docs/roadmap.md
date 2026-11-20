@@ -12,8 +12,8 @@
 
 | Order | Task | Target | Deliverable |
 | --- | --- | --- | --- |
-| 1 | [Research Storage SKU availability](#research-storage-sku-availability) | Research completed for `v0.5.0` | Live catalog examples and a decision to ship a check at availability confidence. |
-| 2 | [Research PostgreSQL and App Service](#research-postgresql-and-app-service) | Before `v0.6.0` and `v0.7.0` | One feasibility note per service. |
+| 1 | [Build the PostgreSQL Flexible Server SKU check](#postgresql-flexible-server-feasibility) | `v0.6.0` | A single-region, subscription-scoped check for one compute tier and SKU. |
+| 2 | [Research App Service](#app-service-feasibility) | Before `v0.7.0` | Verify a populated exact-SKU response and what it says about Linux support. |
 | 3 | [Revisit AKS node-size checks](#revisit-aks-node-size-checks) | Before `v0.8.0` | A decision on a supported source for AKS-specific node-size restrictions. |
 
 ## v0.5.x release plan
@@ -69,7 +69,29 @@ Use the Storage research format for each service. Record the user question, API 
 
 **Done when** each note recommends a command, a narrower result, or keeping the existing generic behavior. Each proposed command should identify the exact claim the API can support.
 
-**PostgreSQL live observation.** West Europe and East US both returned `OfferRestricted` with status `Enabled` and no edition entries for the sampled subscription. Treat those responses as an explicit offer restriction. Verify a positive SKU listing on an eligible subscription before defining the success verdict. [Capabilities by Location API](https://learn.microsoft.com/en-us/rest/api/postgresql/capabilities-by-location/list?view=rest-postgresql-2026-10-01)
+### PostgreSQL Flexible Server feasibility
+
+The stable `2026-10-01` Capabilities by Location API supplies subscription-scoped evidence for one region. Match the requested tier in `value[].supportedServerEditions[].name` and the exact compute SKU in that edition's `supportedServerSkus[].name`. Follow `nextLink` before interpreting a missing SKU. The documented read action is `Microsoft.DBforPostgreSQL/locations/capabilities/read`. The live probe used an existing sign-in. Minimum-role and provider-registration behavior remain unverified. [Capabilities by Location API](https://learn.microsoft.com/en-us/rest/api/postgresql/capabilities-by-location/list?view=rest-postgresql-2026-10-01) · [Azure RBAC database permissions](https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/databases)
+
+On 2026-11-20, read-only probes against one subscription returned one capability record and no continuation link in each of ten sampled regions. The results distinguish a listed compute SKU, a missing SKU in a populated tier, and a subscription offer restriction.
+
+| Case | Live evidence |
+| --- | --- |
+| Advertised | `francecentral` and `swedencentral` reported `OfferRestricted: Disabled` and listed `GeneralPurpose / Standard_D2ds_v5` with 2 vCores. The capability, tier, and matching SKU omitted `status`, so a positive check cannot require that field. |
+| Unlisted SKU | `norwayeast` reported `OfferRestricted: Disabled` and returned 30 `GeneralPurpose` SKU names. `Standard_D16as_v5` was absent there and listed among the 82 names in `francecentral`. |
+| Offer restriction | `westeurope`, `eastus`, `eastus2`, and `germanywestcentral` reported `OfferRestricted: Enabled` and returned no edition rows. |
+
+To reproduce a sample with the active Azure CLI subscription, change `francecentral` to the region under test.
+
+```powershell
+$subscription = az account show --query id -o tsv
+$region = 'francecentral'
+az rest --method get --url "https://management.azure.com/subscriptions/$subscription/providers/Microsoft.DBforPostgreSQL/locations/$region/capabilities?api-version=2026-10-01"
+```
+
+**Decision.** Implement a single-region `azw check postgres` at availability confidence with explicit tier and SKU inputs. Treat an enabled offer restriction as blocked, even when the edition list is empty. A matching SKU in a populated, unrestricted catalog supports an advertised verdict when no explicit status blocks it. A populated requested tier with an absent SKU supports an unlisted verdict. Incomplete or ambiguous evidence remains inconclusive. Treat failed requests as errors. Cover documented tier and SKU status fields, incomplete responses, and pagination with fixtures. Evaluate allowed-location policy separately. HA, zones, quota, and live capacity remain outside v0.6.0. [Azure PostgreSQL capacity errors](https://learn.microsoft.com/en-us/azure/postgresql/troubleshoot/how-to-resolve-capacity-errors)
+
+### App Service feasibility
 
 **App Service live observation.** The Basic tier Linux filter returned region listings, but the exact SKU endpoint returned an empty list on two API versions despite the provider being registered. The tier result supports a Linux worker observation at tier scope. Exact SKU status remains inconclusive for this subscription. Verify a populated SKU response before building the exact-SKU verdict. [List SKUs API](https://learn.microsoft.com/en-us/rest/api/appservice/list-skus/list-skus?view=rest-appservice-2026-07-15) · [List Geo Regions API](https://learn.microsoft.com/en-us/rest/api/appservice/list-geo-regions/list-geo-regions?view=rest-appservice-2026-07-15)
 
@@ -85,7 +107,7 @@ These targets give each roadmap area a place in the release sequence. Review the
 
 | Target | Purpose | Planned first deliverable | Decision before implementation |
 | --- | --- | --- | --- |
-| `v0.6.0` | PostgreSQL Flexible Server | A single-region check for a requested compute SKU. | Show that the regional capabilities response supports a useful subscription-scoped verdict. Evaluate HA in a later increment. |
+| `v0.6.0` | PostgreSQL Flexible Server | A single-region check for a requested compute tier and SKU. | The [feasibility probes](#postgresql-flexible-server-feasibility) distinguish advertised, unlisted, and offer-restricted cases. Evaluate HA in a later increment. |
 | `v0.7.0` | App Service | Report exact regional plan SKU evidence and tier-level Linux worker evidence. | Validate both catalogs live. Claim Linux availability for an exact SKU only if the provider exposes SKU-level Linux evidence. |
 | `v0.8.0` | AKS | A single-region node-pool VM size check for a defined pool configuration. | Identify a supported read-only source for AKS-specific restrictions and document how it relates to Compute quota. |
 | `v0.9.0` | Shell and CI workflows | Package a small helper for a concrete workflow built around `pick -o value` or `verify -o json`. | Identify a recurring use case and define the helper’s output and failure behavior. Runnable examples may be sufficient. |
