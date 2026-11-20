@@ -6,14 +6,14 @@
 
 ## Where the project stands
 
-[v0.4.10](https://github.com/VidGuiCode/az-where/releases/tag/v0.4.10) can compare VM sizes using SKU, policy, subscription restrictions, and live VM-family quota. It can also compare generic resource types, pick a region that advertises all of them, and preflight literal Terraform and Bicep values. Generic resource checks currently stop at provider-catalog availability.
+[v0.5.0](https://github.com/VidGuiCode/az-where/releases/tag/v0.5.0) adds a single-region check for a Storage account kind and SKU. VM checks combine SKU, policy, subscription restrictions, and live VM-family quota. The CLI also compares generic resource types, picks a region that advertises all of them, and preflights literal Terraform and Bicep values.
 
 ## Work queue
 
 | Order | Task | Target | Deliverable |
 | --- | --- | --- | --- |
 | 1 | [Research Storage SKU availability](#research-storage-sku-availability) | Research completed for `v0.5.0` | Live catalog examples and a decision to ship a check at availability confidence. |
-| 2 | [Build the Storage series](#v05x-release-plan) | `v0.5.0`–`v0.5.4` | Check one region, scan, compare, preflight IaC, and pick a region for scripts. |
+| 2 | [Continue the Storage series](#v05x-release-plan) | `v0.5.1`–`v0.5.4` | Scan regions, compare configurations, preflight IaC, and pick a region for scripts. |
 | 3 | [Research PostgreSQL and App Service](#research-postgresql-and-app-service) | Before `v0.6.0` and `v0.7.0` | One feasibility note per service. Research can run during the Storage series. |
 | 4 | [Revisit AKS node-size checks](#revisit-aks-node-size-checks) | Before `v0.8.0` | A decision on a supported source for AKS-specific node-size restrictions. |
 

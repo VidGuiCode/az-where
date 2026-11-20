@@ -2,7 +2,7 @@
 
 [README](README.md) · [GitHub releases](https://github.com/VidGuiCode/az-where/releases)
 
-## 0.5.0 (unreleased)
+## 0.5.0
 
 - Add `azw check storage --kind StorageV2 --sku Standard_ZRS --region westeurope` for a subscription-scoped Storage SKU and location check with allowed-location policy evidence.
 - Report listed, restricted, unlisted, and inconclusive catalog results in terminal output, JSON, and verdict-only mode. See the [Storage JSON contract](docs/json-contracts.md#storage-check).
