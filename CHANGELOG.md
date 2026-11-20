@@ -2,7 +2,7 @@
 
 [README](README.md) · [GitHub releases](https://github.com/VidGuiCode/az-where/releases)
 
-## 0.5.3 (unreleased)
+## 0.5.3
 
 - `azw verify` checks literal Storage account kinds and SKUs in Terraform and Bicep with the same subscription-scoped catalog, allowed-location policy, and availability verdicts as `azw check storage`.
 - Report Storage checks and skips in the optional `storageAccounts` JSON section. The VM and generic resource findings retain their existing fields, including generic availability for Storage accounts. A checked Storage verdict other than `STORAGE_SKU_ADVERTISED` exits `1`. Skips alone exit `0`.
