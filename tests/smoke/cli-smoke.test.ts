@@ -31,6 +31,20 @@ function runFail(args: string[]) {
 }
 
 describe("CLI smoke tests", () => {
+  it("exposes Storage pick and its named inputs", () => {
+    const help = run(["pick", "storage", "--help"]);
+    expect(help).toContain("--kind <kind>");
+    expect(help).toContain("--sku <sku>");
+    expect(help).toContain("--geography");
+  });
+
+  it("validates the Storage pick SKU before querying Azure", () => {
+    const result = runFail(["pick", "storage", "--kind", "StorageV2", "--sku", "ZRS", "-o", "json"]);
+    expect(result.status).toBe(3);
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(result.stderr)).toMatchObject({ status: "error", code: "ValidationError" });
+  });
+
   it("exposes compare storage with configuration pairs and geographic scope", () => {
     const output = run(["compare", "storage", "--help"]);
     expect(output).toContain("kind/SKU");

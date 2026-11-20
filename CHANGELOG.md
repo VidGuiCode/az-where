@@ -2,6 +2,11 @@
 
 [README](README.md) · [GitHub releases](https://github.com/VidGuiCode/az-where/releases)
 
+## 0.5.4 (unreleased)
+
+- Add `azw pick storage --kind StorageV2 --sku Standard_ZRS --eu -o value` to select the first advertised, policy-allowed region by ARM name. JSON includes the selected evidence or `picked: null` when no region qualifies.
+- Remove the redundant npm `prepare` script that triggered install-script warnings when updating from the release tarball.
+
 ## 0.5.3
 
 - `azw verify` checks literal Storage account kinds and SKUs in Terraform and Bicep with the same subscription-scoped catalog, allowed-location policy, and availability verdicts as `azw check storage`.

@@ -124,6 +124,14 @@ azw compare storage "StorageV2/Standard_LRS,StorageV2/Standard_ZRS" --eu
 
 Use `-o json` to read the verdict and evidence for every cell. [Storage comparison contract](docs/json-contracts.md#storage-comparison)
 
+### Pick a Storage region for a script
+
+```bash
+azw pick storage --kind StorageV2 --sku Standard_ZRS --eu -o value
+```
+
+Pick returns the first advertised region in alphabetical order by ARM region name within the requested geography. It requires a successful allowed-location policy lookup unless you pass `--no-policy`. If no region qualifies, `-o value` writes nothing to stdout and exits `1`. Use `-o json` to inspect the selected region and its evidence. [Storage pick contract](docs/json-contracts.md#storage-pick)
+
 ## Preflight Terraform or Bicep
 
 ```bash

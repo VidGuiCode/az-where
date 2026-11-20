@@ -178,6 +178,14 @@ Same envelope with `resourceKind: "resource"`, `resolved`, `confidence: "availab
 
 Exit `0` means at least one configuration is advertised in at least one region. Exit `1` means no cell was advertised, and JSON still contains the matrix. Failed reads use the [error envelope](#error-envelope). Use `json` or `compact` for machine output.
 
+### Storage pick
+
+`azw pick storage --kind <kind> --sku <sku> [scope] -o json` returns `schemaVersion: 1`, `kind: "pick"`, `resourceKind: "storage"`, `accountKind`, `sku`, `geography` (resolved group name or `"all"`), `confidence: "availability"`, `cache`, `policy`, and `picked`.
+
+`picked` is either `null` or an object with `region`, `displayName`, `geographyGroup` (string or `null`), `verdict: "STORAGE_SKU_ADVERTISED"`, `evidence`, and `explanation`. The evidence and explanation follow the [Storage check contract](#storage-check). Among regions in scope with an advertised verdict, the first ARM region name in alphabetical order wins. The policy lookup must succeed unless `--no-policy` is passed. The Storage catalog is read once when at least one region in scope passes the policy check.
+
+A successful pick exits `0`. If the scan completes with no qualifying region, it exits `1` and returns `picked: null` in JSON and compact modes. Default and `value` output print only the region name on success and leave stdout empty on a miss. Invalid inputs, a geography with no matching regions, and lookup errors use the standard [error envelope](#error-envelope) in JSON modes.
+
 ### `azw pick vm <sku> [scope] -o json`
 
 ```json
