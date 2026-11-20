@@ -2,7 +2,7 @@
 
 [README](README.md) · [GitHub releases](https://github.com/VidGuiCode/az-where/releases)
 
-## 0.5.4 (unreleased)
+## 0.5.4
 
 - Add `azw pick storage --kind StorageV2 --sku Standard_ZRS --eu -o value` to select the first advertised, policy-allowed region by ARM name. JSON includes the selected evidence or `picked: null` when no region qualifies.
 - Remove the redundant npm `prepare` script that triggered install-script warnings when updating from the release tarball.
