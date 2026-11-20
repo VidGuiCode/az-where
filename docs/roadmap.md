@@ -2,19 +2,18 @@
 
 [Release plan](#v05x-release-plan) · [Later versions](#later-versions) · [Changelog](../CHANGELOG.md) · [GitHub Issues](https://github.com/VidGuiCode/az-where/issues)
 
-`az-where` helps people choose Azure regions for a VM or a set of resources before they deploy. The next step is to answer narrower questions, such as whether Azure advertises a specific Storage account kind and replication SKU in a region for the selected subscription.
+`az-where` helps people choose Azure regions before they deploy. It checks VM deployability, generic resource availability, and subscription-scoped SKU listings for Storage and PostgreSQL Flexible Server.
 
 ## Where the project stands
 
-[v0.5.4](https://github.com/VidGuiCode/az-where/releases/tag/v0.5.4) picks one region for a Storage account kind and SKU with the same subscription catalog and allowed-location policy used by the other Storage commands. Storage preflight checks literal configurations in Terraform and Bicep. VM checks combine SKU, policy, subscription restrictions, and live VM-family quota. The CLI also compares generic resource types and picks a region that advertises all of them.
+[v0.6.0](https://github.com/VidGuiCode/az-where/releases/tag/v0.6.0) checks one PostgreSQL Flexible Server compute tier and SKU in one region. It distinguishes an advertised SKU, an unlisted SKU in a populated tier, an explicit restriction, and incomplete evidence. Storage checks, region selection, and Terraform and Bicep preflight use the subscription's Storage SKU catalog. VM checks combine SKU, policy, subscription restrictions, and live VM-family quota.
 
 ## Work queue
 
 | Order | Task | Target | Deliverable |
 | --- | --- | --- | --- |
-| 1 | [Build the PostgreSQL Flexible Server SKU check](#postgresql-flexible-server-feasibility) | `v0.6.0` | A single-region, subscription-scoped check for one compute tier and SKU. |
-| 2 | [Research App Service](#app-service-feasibility) | Before `v0.7.0` | Verify a populated exact-SKU response and what it says about Linux support. |
-| 3 | [Revisit AKS node-size checks](#revisit-aks-node-size-checks) | Before `v0.8.0` | A decision on a supported source for AKS-specific node-size restrictions. |
+| 1 | [Research App Service](#app-service-feasibility) | Before `v0.7.0` | Verify a populated exact-SKU response and what it says about Linux support. |
+| 2 | [Revisit AKS node-size checks](#revisit-aks-node-size-checks) | Before `v0.8.0` | A decision on a supported source for AKS-specific node-size restrictions. |
 
 ## v0.5.x release plan
 

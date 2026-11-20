@@ -2,7 +2,7 @@
 
 [README](README.md) · [GitHub releases](https://github.com/VidGuiCode/az-where/releases)
 
-## 0.6.0 (unreleased)
+## 0.6.0
 
 - Add `azw check postgres --tier GeneralPurpose --sku Standard_D2ds_v5 --region francecentral` for one PostgreSQL Flexible Server compute tier and SKU. The subscription-scoped check distinguishes advertised, restricted, unlisted, and inconclusive capability evidence and reports allowed-location policy separately.
 

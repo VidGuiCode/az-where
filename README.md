@@ -41,7 +41,7 @@ Scanned 2 regions in 1.4s.
 Use **Node.js 20+** and **Azure CLI 2.11.0+**. The GitHub release tarball installs both `azw` and `az-where`.
 
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.5.4/az-where-0.5.4.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.6.0/az-where-0.6.0.tgz
 az login
 azw --version
 azw doctor
