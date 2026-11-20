@@ -132,6 +132,16 @@ azw pick storage --kind StorageV2 --sku Standard_ZRS --eu -o value
 
 Pick returns the first advertised region in alphabetical order by ARM region name within the requested geography. It requires a successful allowed-location policy lookup unless you pass `--no-policy`. If no region qualifies, `-o value` writes nothing to stdout and exits `1`. Use `-o json` to inspect the selected region and its evidence. [Storage pick contract](docs/json-contracts.md#storage-pick)
 
+## Check a PostgreSQL Flexible Server SKU
+
+```bash
+azw check postgres --tier GeneralPurpose --sku Standard_D2ds_v5 --region francecentral
+```
+
+The check reads the selected subscription's regional PostgreSQL capabilities. It reports whether the exact tier and compute SKU are advertised, restricted, unlisted in a populated tier, or inconclusive. Allowed-location policy is evaluated separately and reported as unchecked if skipped or unavailable. HA, zones, quota, and live capacity are outside the check.
+
+Use `-o value` for one verdict or `-o json` for the evidence. Exit `0` means advertised. Other completed verdicts exit `1`. [PostgreSQL JSON contract](docs/json-contracts.md#postgresql-flexible-server-check)
+
 ## Preflight Terraform or Bicep
 
 ```bash

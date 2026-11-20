@@ -2,6 +2,10 @@
 
 [README](README.md) · [GitHub releases](https://github.com/VidGuiCode/az-where/releases)
 
+## 0.6.0 (unreleased)
+
+- Add `azw check postgres --tier GeneralPurpose --sku Standard_D2ds_v5 --region francecentral` for one PostgreSQL Flexible Server compute tier and SKU. The subscription-scoped check distinguishes advertised, restricted, unlisted, and inconclusive capability evidence and reports allowed-location policy separately.
+
 ## 0.5.4
 
 - Add `azw pick storage --kind StorageV2 --sku Standard_ZRS --eu -o value` to select the first advertised, policy-allowed region by ARM name. JSON includes the selected evidence or `picked: null` when no region qualifies.

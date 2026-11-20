@@ -20,6 +20,7 @@ import {
   resolveOutputMode,
 } from "../core/outputMode.js";
 import { loadPolicyCheck } from "../core/policy.js";
+import { checkPostgresSku, validatePostgresTarget } from "../core/postgres.js";
 import { scanResourceAvailability } from "../core/resources.js";
 import { scanRegions } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
@@ -61,9 +62,20 @@ export function createCheckCommand(): Command {
     .action(runStorageCheckAction);
   addOutputOption(addJsonCompatibilityOptions(storage, "Machine-readable JSON output"));
 
+  const postgres = new Command("postgres")
+    .description("Check a PostgreSQL Flexible Server compute tier and SKU in one region.")
+    .requiredOption("--tier <tier>", "PostgreSQL compute tier (e.g. GeneralPurpose)")
+    .requiredOption("--sku <sku>", "PostgreSQL compute SKU (e.g. Standard_D2ds_v5)")
+    .requiredOption("--region <name>", "Azure region name")
+    .option("--no-policy", "Skip Azure Policy allowed-location checks")
+    .option("--refresh", "Bypass cached ARM location data")
+    .action(runPostgresCheckAction);
+  addOutputOption(addJsonCompatibilityOptions(postgres, "Machine-readable JSON output"));
+
   cmd.addCommand(vm);
   cmd.addCommand(resource);
   cmd.addCommand(storage);
+  cmd.addCommand(postgres);
   return cmd;
 }
 
@@ -263,6 +275,66 @@ async function runStorageCheckAction(opts: {
 function matchRegion(locations: Awaited<ReturnType<typeof listLocations>>, region: string) {
   const normalized = region.trim().toLowerCase();
   return locations.filter((l) => l.name.toLowerCase() === normalized);
+}
+
+async function runPostgresCheckAction(opts: {
+  tier: string;
+  sku: string;
+  region: string;
+  policy?: boolean;
+  refresh?: boolean;
+  json?: boolean;
+  compact?: boolean;
+  output?: string;
+}): Promise<void> {
+  let jsonErrors = Boolean(opts.json);
+  try {
+    const mode = resolveOutputMode(opts, { allowValue: true, command: "check postgres" });
+    jsonErrors = isJsonOutput(mode);
+    const target = validatePostgresTarget(opts.tier, opts.sku);
+    if (!opts.region.trim()) throw new ValidationError("Provide an Azure region name.");
+    const [location] = matchRegion(
+      await listLocations({
+        progressLabel: `Checking ${target.sku} in ${opts.region}`,
+        refresh: Boolean(opts.refresh),
+      }),
+      opts.region,
+    );
+    if (!location) throw new ValidationError(`Unknown region '${opts.region}'.`);
+
+    const policy = await loadPolicyCheck({ enabled: opts.policy !== false, required: false });
+    const { verdict, evidence, reason } = await checkPostgresSku(target, location.name, policy.check);
+    if (mode === "value") {
+      console.log(verdict);
+    } else if (isJsonOutput(mode)) {
+      printJson({
+        schemaVersion: 1,
+        kind: "check",
+        resourceKind: "postgres",
+        ...target,
+        region: location.name,
+        verdict,
+        confidence: "availability",
+        cache: armCacheSummary(),
+        policy: policy.summary,
+        evidence,
+        explanation: { code: verdict, reason, hint: null },
+      });
+    } else {
+      printTable(
+        [[location.name, target.tier, target.sku, verdict]],
+        ["REGION", "COMPUTE TIER", "SKU", "VERDICT"],
+      );
+      console.log(`Reason: ${reason}`);
+      console.log("Confidence: availability. HA, zones, quota and live capacity were not checked.");
+      if (!policy.summary.checked) {
+        console.log(`Policy: unchecked${policy.summary.error ? ` (${policy.summary.error})` : ""}.`);
+      }
+    }
+    if (verdict !== "POSTGRES_SKU_ADVERTISED") process.exitCode = 1;
+  } catch (err) {
+    exitWithError(err, jsonErrors);
+  }
 }
 
 function resourceCheckRows(rows: ResourceAvailabilityVerdict[]): string[][] {

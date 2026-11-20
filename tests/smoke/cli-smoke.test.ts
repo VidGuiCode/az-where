@@ -31,6 +31,23 @@ function runFail(args: string[]) {
 }
 
 describe("CLI smoke tests", () => {
+  it("exposes PostgreSQL check with tier, SKU, and region options", () => {
+    const help = run(["check", "postgres", "--help"]);
+    expect(help).toContain("--tier <tier>");
+    expect(help).toContain("--sku <sku>");
+    expect(help).toContain("--region <name>");
+  });
+
+  it("validates the PostgreSQL compute SKU before querying Azure", () => {
+    const result = runFail([
+      "check", "postgres", "--tier", "GeneralPurpose", "--sku", "D2ds_v5",
+      "--region", "francecentral", "-o", "compact",
+    ]);
+    expect(result.status).toBe(3);
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(result.stderr)).toMatchObject({ code: "ValidationError" });
+  });
+
   it("exposes Storage pick and its named inputs", () => {
     const help = run(["pick", "storage", "--help"]);
     expect(help).toContain("--kind <kind>");

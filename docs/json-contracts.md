@@ -23,7 +23,7 @@ Parse these exact verdict strings.
 | `FULL` | VM | Offered but the family quota has fewer free vCPUs than the size needs |
 | `SKU_NOT_OFFERED` | VM | The region's SKU catalog does not list the size |
 | `BLOCKED_FOR_SUB` | VM | Azure restricts the size for this subscription in this region |
-| `POLICY_DENIED` | VM, resource | An Azure Policy allowed-location assignment excludes the region |
+| `POLICY_DENIED` | All checked kinds | An Azure Policy allowed-location assignment excludes the region |
 | `QUOTA_UNKNOWN` | VM | Quota state could not be read (missing usage row or ARM failure) |
 | `RESOURCE_SUPPORTED` | resource | The ARM provider catalog advertises the region for the type |
 | `RESOURCE_NOT_SUPPORTED` | resource | The provider catalog does not advertise the region for the type |
@@ -35,7 +35,7 @@ Parse these exact verdict strings.
 | Confidence | Meaning |
 |---|---|
 | `deployability` | VM checks combine SKU, subscription, policy, and live VM-family quota evidence. See `policy.checked` and `policy.error` for policy coverage. |
-| `availability` | Generic resource checks describe the provider catalog’s advertised locations. Service-specific SKU, quota, and capacity are outside the check. |
+| `availability` | Generic resource checks describe advertised locations. Service-specific checks describe SKU listings and restrictions from Azure capability catalogs. Quota and live capacity are outside these checks. |
 
 ## Common Envelope Fields
 
@@ -43,7 +43,7 @@ Parse these exact verdict strings.
 |---|---|---|---|
 | `schemaVersion` | `1` | all | |
 | `kind` | string | all | The verb: `availability`, `check`, `pick`, `suggest`, `compare`, `verify` |
-| `resourceKind` | string | all | `vm`, `resource`, or `storage` |
+| `resourceKind` | string | all | `vm`, `resource`, `storage`, or `postgres` |
 | `cache` | object | all | `{ used, refreshed, ttlSeconds }` |
 | `policy` | object | all | `{ checked, restricted, allowedLocations, assignments: [{name, displayName}], error }`; `allowedLocations`/`assignments` are `null`/`[]` when unrestricted |
 | `explanation` | object | check payloads | `{ code, reason, hint }` **(since 0.4.6)**; `hint` may be `null` |
@@ -143,6 +143,22 @@ Same envelope with `resourceKind: "resource"`, plus `target`, `resolved` (`{ inp
 ### `azw check resource <target> --region <name> -o json`
 
 Same envelope with `resourceKind: "resource"`, `resolved`, `confidence: "availability"`, `checks` as one resource row, and `explanation`. `RESOURCE_SUPPORTED` explanations always state that the result is availability, not deployability. Exit `1` when `verdict` is not `RESOURCE_SUPPORTED`.
+
+### PostgreSQL Flexible Server check
+
+`azw check postgres --tier <tier> --sku <sku> --region <name> -o json` returns `schemaVersion: 1`, `kind: "check"`, `resourceKind: "postgres"`, `tier`, `sku`, `region`, `verdict`, `confidence: "availability"`, `cache`, `policy`, `evidence`, and `explanation`. The check matches the tier and exact SKU case-insensitively and returns the canonical ARM region name.
+
+| Verdict | Meaning |
+| --- | --- |
+| `POSTGRES_SKU_ADVERTISED` | Azure lists the requested SKU in the requested tier, reports `OfferRestricted: Disabled`, and provides no blocking or inconclusive status for the match. Omitted capability, tier, and SKU statuses are accepted. |
+| `POSTGRES_SKU_RESTRICTED` | Azure reports an enabled offer or regional restriction, or marks the regional capability, requested tier, or requested SKU as disabled. An explicit restriction takes precedence over a listing. |
+| `POSTGRES_SKU_NOT_LISTED` | The requested tier has a populated, usable SKU list that omits the requested SKU after all response pages are read. Azure reports `OfferRestricted: Disabled`. |
+| `POSTGRES_SKU_UNKNOWN` | Evidence is incomplete or ambiguous, for example when the requested tier has no usable list or Azure omits the offer restriction status. |
+| `POLICY_DENIED` | Allowed-location policy excludes the region. The PostgreSQL capability lookup is skipped. |
+
+`evidence.listed` is `true` if the requested tier contains the SKU, `false` for an unlisted verdict, and `null` when presence or absence is unavailable. `evidence.offerRestricted` is `true` when Azure enables the offer restriction, `false` when the reported offer flags are disabled, or `null` when the offer status cannot be resolved. `evidence.restrictionScope` is `"offer"`, `"region"`, `"tier"`, `"sku"`, or `null`. `evidence.vCores` is the reported positive integer for the matched SKU when unambiguous, or `null`. `explanation` carries `{ code, reason, hint }`.
+
+`-o value` prints the verdict. Exit `0` means advertised. Other completed verdicts write a result and exit `1`. Failed requests and malformed list pages use the [error envelope](#error-envelope) on stderr. If policy is skipped or its lookup fails, the catalog is still checked and `policy.checked` is `false`. The capabilities lookup is live, and `--refresh` refreshes the ARM region list.
 
 ### Storage check
 
