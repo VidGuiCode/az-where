@@ -41,7 +41,7 @@ Scanned 2 regions in 1.4s.
 Use **Node.js 20+** and **Azure CLI 2.11.0+**. The GitHub release tarball installs both `azw` and `az-where`.
 
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.5.0/az-where-0.5.0.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.5.1/az-where-0.5.1.tgz
 az login
 azw --version
 azw doctor
@@ -107,7 +107,7 @@ azw check storage --kind StorageV2 --sku Standard_ZRS --region westeurope
 
 The check reads the selected subscription’s Storage SKU catalog and evaluates allowed-location policy when available. It reports whether the requested combination is listed, explicitly restricted, absent from the catalog, or inconclusive. It does not check account quota, zone placement, or live capacity. See the [Storage JSON contract](docs/json-contracts.md#storage-check).
 
-In the v0.5.1 source build, scan a geography for the same configuration:
+To scan a geography for the same configuration, run:
 
 ```bash
 azw availability storage --kind StorageV2 --sku Standard_ZRS --eu

@@ -2,7 +2,7 @@
 
 [README](README.md) · [GitHub releases](https://github.com/VidGuiCode/az-where/releases)
 
-## 0.5.1 (unreleased)
+## 0.5.1
 
 - Add `azw availability storage --kind StorageV2 --sku Standard_ZRS --eu` to scan regions for one Storage configuration, with the same evidence and policy rules as `check storage`.
 - Read the subscription’s Storage catalog once per scan. JSON retains all evaluated regions, and `-o name` prints only advertised region names.
