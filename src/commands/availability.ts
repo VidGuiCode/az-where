@@ -15,12 +15,13 @@ import {
 import { buildAvailabilityResourcePayload } from "../core/payloads.js";
 import { loadPolicyCheck, type PolicySummary } from "../core/policy.js";
 import { scanResourceAvailability } from "../core/resources.js";
+import { scanStorageAvailability, validateStorageTarget } from "../core/storage.js";
 import type { ResourceAvailabilityVerdict } from "../core/types.js";
 import { runRegionsAction } from "./regions.js";
 
 export function createAvailabilityCommand(): Command {
   const cmd = new Command("availability").description(
-    "Canonical availability scans for VMs and generic Azure resources.",
+    "Canonical availability scans for VM sizes, resource types, and Storage SKUs.",
   );
 
   const vm = new Command("vm")
@@ -57,9 +58,112 @@ export function createAvailabilityCommand(): Command {
     });
   addOutputOption(addJsonCompatibilityOptions(resource, "Machine-readable JSON output"));
 
+  const storage = new Command("storage")
+    .description("Scan regions for a Storage account kind and SKU.")
+    .requiredOption("--kind <kind>", "Storage account kind (e.g. StorageV2)")
+    .requiredOption("--sku <sku>", "Storage SKU (e.g. Standard_ZRS)")
+    .option("--region <name>", "Scope to a single region")
+    .option("--eu", "Shortcut for --geography Europe")
+    .option("--us", "Shortcut for --geography US")
+    .option("--asia", "Shortcut for --geography 'Asia Pacific'")
+    .option("--geography <group>", "Filter by geographyGroup", "all")
+    .option("--no-policy", "Skip Azure Policy allowed-location checks")
+    .option("--refresh", "Bypass cached ARM location data")
+    .option("--name", "Print one advertised region name per line")
+    .action(runStorageAvailabilityAction);
+  addOutputOption(addJsonCompatibilityOptions(storage, "Machine-readable JSON output"));
+
   cmd.addCommand(vm);
   cmd.addCommand(resource);
+  cmd.addCommand(storage);
   return cmd;
+}
+
+async function runStorageAvailabilityAction(opts: {
+  kind: string;
+  sku: string;
+  region?: string;
+  eu?: boolean;
+  us?: boolean;
+  asia?: boolean;
+  geography?: string;
+  policy?: boolean;
+  refresh?: boolean;
+  json?: boolean;
+  compact?: boolean;
+  name?: boolean;
+  output?: string;
+}): Promise<void> {
+  let jsonErrors = Boolean(opts.json);
+  try {
+    const mode = resolveOutputMode(opts, { allowName: true, command: "availability storage" });
+    jsonErrors = isJsonOutput(mode);
+    const target = validateStorageTarget(opts.kind, opts.sku);
+    if (opts.region !== undefined) {
+      if (!opts.region.trim()) throw new ValidationError("Provide an Azure region name.");
+      validateRegionScope(opts);
+    }
+    const geoInput = opts.eu
+      ? "eu"
+      : opts.us
+        ? "us"
+        : opts.asia
+          ? "asia"
+          : (opts.geography ?? "all");
+    const geography = resolveGeography(geoInput);
+    const started = Date.now();
+    const allLocations = await listLocations({
+      progressLabel: `Checking Storage availability for ${target.accountKind} / ${target.sku}`,
+      refresh: Boolean(opts.refresh),
+    });
+    const locations = opts.region
+      ? matchRegion(allLocations, opts.region)
+      : filterByGeography(allLocations, geography);
+    if (locations.length === 0) {
+      throw new ValidationError(
+        opts.region
+          ? `Unknown region '${opts.region}'. Try: azw geos`
+          : `No regions matched geography '${geoInput}'. Try: azw geos`,
+      );
+    }
+
+    const policy = await loadPolicyCheck({ enabled: opts.policy !== false, required: false });
+    const rows = await scanStorageAvailability(target, locations, policy.check);
+    const advertised = rows.filter((row) => row.verdict === "STORAGE_SKU_ADVERTISED");
+    if (mode === "name") {
+      for (const row of advertised) console.log(row.region);
+    } else if (isJsonOutput(mode)) {
+      printJson({
+        schemaVersion: 1,
+        kind: "availability",
+        resourceKind: "storage",
+        ...target,
+        geography: opts.region ? null : geography ?? "all",
+        region: opts.region ? locations[0].name : null,
+        scannedAt: new Date().toISOString(),
+        elapsedMs: Date.now() - started,
+        confidence: "availability",
+        cache: armCacheSummary(),
+        policy: policy.summary,
+        regions: rows,
+      });
+    } else {
+      printPolicyWarning(policy.summary, mode);
+      printTable(
+        rows.map((row) => [row.region, shortGeo(row.geographyGroup ?? undefined), row.verdict]),
+        ["REGION", "GEO", "VERDICT"],
+      );
+      printInfo(
+        `${target.accountKind} / ${target.sku}: ${advertised.length} of ${rows.length} regions advertised.`,
+      );
+      printInfo(
+        `Confidence: availability. Allowed-location policy: ${policy.summary.checked ? "checked" : "unchecked"}.`,
+      );
+    }
+    if (advertised.length === 0) process.exitCode = 1;
+  } catch (err) {
+    exitWithError(err, jsonErrors);
+  }
 }
 
 export async function runResourceAvailabilityAction(

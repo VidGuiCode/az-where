@@ -20,7 +20,7 @@ azw <verb> <kind> <target> [scope] [output options]
 
 Use `vm` for VM SKU checks, `resource` for provider-catalog checks, and `storage` for Storage SKU evidence. Use existing verbs for new intents when they fit. A new resource kind warrants distinct service-specific evidence. Keep generic catalog checks under `resource`.
 
-`check storage` takes named inputs for account kind, Storage SKU, and region. It evaluates a subscription SKU catalog at availability confidence. [Storage JSON contract](json-contracts.md#storage-check)
+`check storage` takes named inputs for account kind, Storage SKU, and region. `availability storage` uses the same kind and SKU flags with optional region or geography scope. Both evaluate a subscription SKU catalog at availability confidence. [Storage JSON contracts](json-contracts.md#storage-check)
 
 `compare` takes a comma-separated list of VM SKUs or resource targets. Resource `pick` and `suggest` also accept a comma-separated list and require every target to be advertised in the chosen region. A single resource target works with either command.
 

@@ -31,6 +31,26 @@ function runFail(args: string[]) {
 }
 
 describe("CLI smoke tests", () => {
+  it("exposes Storage availability with geography filters and name output", () => {
+    const output = run(["availability", "storage", "--help"]);
+    for (const flag of ["--kind", "--sku", "--eu", "--geography", "--name"]) {
+      expect(output).toContain(flag);
+    }
+  });
+
+  it("rejects conflicting Storage availability scopes before Azure calls", () => {
+    const res = runFail([
+      "availability", "storage", "--kind", "StorageV2", "--sku", "Standard_ZRS",
+      "--region", "westeurope", "--eu", "-o", "json",
+    ]);
+    expect(res.status).toBe(3);
+    expect(res.stdout).toBe("");
+    expect(JSON.parse(res.stderr)).toMatchObject({
+      code: "ValidationError",
+      message: expect.stringContaining("--region"),
+    });
+  });
+
   it("exposes the Storage check with explicit kind, SKU, and region options", () => {
     const output = run(["check", "storage", "--help"]);
     expect(output).toContain("--kind <kind>");

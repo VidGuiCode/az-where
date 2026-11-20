@@ -1,4 +1,5 @@
 import { armList } from "./arm.js";
+import { ValidationError } from "./errors.js";
 import type { PolicyCheck } from "./policy.js";
 import type { AzLocation } from "./types.js";
 
@@ -43,6 +44,33 @@ export interface StorageSkuResult {
   listed: boolean | null;
   restrictionReasons: string[];
   reason: string;
+}
+
+export function validateStorageTarget(kind: string, sku: string) {
+  const accountKind = kind.trim();
+  const skuName = sku.trim();
+  if (!/^[a-z][a-z0-9]*$/i.test(accountKind)) {
+    throw new ValidationError("Use a Storage account kind such as StorageV2.");
+  }
+  if (!/^[a-z][a-z0-9]*(_[a-z0-9]+)+$/i.test(skuName)) {
+    throw new ValidationError("Use a full Storage SKU name such as Standard_ZRS.");
+  }
+  return { accountKind, sku: skuName };
+}
+
+export async function scanStorageAvailability(
+  target: { accountKind: string; sku: string },
+  locations: AzLocation[],
+  policy?: PolicyCheck,
+) {
+  const hasAllowedRegion = locations.some((location) => policy?.isAllowed(location.name) !== false);
+  const catalog = hasAllowedRegion ? await listStorageSkus() : [];
+  return locations.map((location) => ({
+    region: location.name,
+    displayName: location.displayName,
+    geographyGroup: location.metadata?.geographyGroup ?? null,
+    ...classifyStorageSku(catalog, target.accountKind, target.sku, location, policy),
+  }));
 }
 
 export function classifyStorageSku(

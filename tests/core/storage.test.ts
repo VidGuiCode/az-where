@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { armList } from "../../src/core/arm.js";
 import { buildPolicyCheck } from "../../src/core/policy.js";
-import { classifyStorageSku, listStorageSkus, type StorageSku } from "../../src/core/storage.js";
+import {
+  classifyStorageSku,
+  listStorageSkus,
+  scanStorageAvailability,
+  type StorageSku,
+} from "../../src/core/storage.js";
 import type { AzLocation } from "../../src/core/types.js";
 
 vi.mock("../../src/core/arm.js", () => ({
@@ -196,5 +201,43 @@ describe("listStorageSkus", () => {
     mockArmList.mockRejectedValue(failure);
 
     await expect(listStorageSkus()).rejects.toBe(failure);
+  });
+});
+
+describe("scanStorageAvailability", () => {
+  const mockArmList = vi.mocked(armList);
+  const target = { accountKind: "StorageV2", sku: "Standard_ZRS" };
+  const northEurope = { name: "northeurope", displayName: "North Europe" };
+  const policy = buildPolicyCheck({
+    checked: true,
+    restricted: true,
+    allowedLocations: ["westeurope"],
+    assignments: [],
+    error: null,
+  });
+
+  beforeEach(() => {
+    mockArmList.mockReset();
+  });
+
+  it("reads the catalog once and matches the single-region classifier for each row", async () => {
+    mockArmList.mockResolvedValue([storageSku]);
+    const locations = [westEurope, northEurope];
+    const rows = await scanStorageAvailability(target, locations, policy);
+
+    expect(mockArmList).toHaveBeenCalledTimes(1);
+    for (const [index, location] of locations.entries()) {
+      expect(rows[index]).toMatchObject({
+        region: location.name,
+        ...classifyStorageSku([storageSku], target.accountKind, target.sku, location, policy),
+      });
+    }
+  });
+
+  it("skips the catalog when policy denies every region", async () => {
+    await expect(scanStorageAvailability(target, [northEurope], policy)).resolves.toMatchObject([
+      { region: "northeurope", verdict: "POLICY_DENIED", listed: null },
+    ]);
+    expect(mockArmList).not.toHaveBeenCalled();
   });
 });

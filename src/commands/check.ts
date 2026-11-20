@@ -23,7 +23,7 @@ import { loadPolicyCheck } from "../core/policy.js";
 import { scanResourceAvailability } from "../core/resources.js";
 import { scanRegions } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
-import { classifyStorageSku, listStorageSkus } from "../core/storage.js";
+import { scanStorageAvailability, validateStorageTarget } from "../core/storage.js";
 import type { ResourceAvailabilityVerdict } from "../core/types.js";
 
 export function createCheckCommand(): Command {
@@ -208,14 +208,8 @@ async function runStorageCheckAction(opts: {
   try {
     const mode = resolveOutputMode(opts, { allowValue: true, command: "check storage" });
     jsonErrors = isJsonOutput(mode);
-    const accountKind = opts.kind.trim();
-    const sku = opts.sku.trim();
-    if (!/^[a-z][a-z0-9]*$/i.test(accountKind)) {
-      throw new ValidationError("Use a Storage account kind such as StorageV2.");
-    }
-    if (!/^[a-z][a-z0-9]*(_[a-z0-9]+)+$/i.test(sku)) {
-      throw new ValidationError("Use a full Storage SKU name such as Standard_ZRS.");
-    }
+    const target = validateStorageTarget(opts.kind, opts.sku);
+    const { accountKind, sku } = target;
     if (!opts.region.trim()) throw new ValidationError("Provide an Azure region name.");
     const [location] = matchRegion(
       await listLocations({
@@ -227,13 +221,9 @@ async function runStorageCheckAction(opts: {
     if (!location) throw new ValidationError(`Unknown region '${opts.region}'.`);
 
     const policy = await loadPolicyCheck({ enabled: opts.policy !== false, required: false });
-    const policyDenied = policy.check?.isAllowed(location.name) === false;
-    const catalog = policyDenied ? [] : await listStorageSkus();
-    const { verdict, listed, restrictionReasons, reason } = classifyStorageSku(
-      catalog,
-      accountKind,
-      sku,
-      location,
+    const [{ verdict, listed, restrictionReasons, reason }] = await scanStorageAvailability(
+      target,
+      [location],
       policy.check,
     );
     if (mode === "value") {

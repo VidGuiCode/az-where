@@ -158,6 +158,14 @@ Same envelope with `resourceKind: "resource"`, `resolved`, `confidence: "availab
 
 `-o value` prints the verdict. Exit `0` means advertised. Other verdicts write a result and exit `1`. A failed request or an unusable catalog uses the [error envelope](#error-envelope) on stderr. Use `policy.checked` and `policy.error` to identify skipped or failed policy reads. The Storage SKU catalog is read live. `--refresh` refreshes the ARM locations list.
 
+### Storage availability
+
+`azw availability storage --kind <kind> --sku <sku> [scope] -o json` uses the same verdicts as [Storage check](#storage-check). The payload carries `schemaVersion: 1`, `kind: "availability"`, `resourceKind: "storage"`, `accountKind`, `sku`, `geography`, `region`, `scannedAt`, `elapsedMs`, `confidence: "availability"`, `cache`, `policy`, and `regions`.
+
+- `regions[]` covers all evaluated locations. Each row contains `region`, `displayName`, nullable `geographyGroup`, `verdict`, `listed`, `restrictionReasons`, and `reason`. The row evidence matches the single-region check.
+- `geography` is the selected group, `"all"` without a filter, or `null` for a single region. `region` is the canonical name for a single-region scan and `null` otherwise.
+- The scan exits `0` when at least one region is advertised and `1` otherwise, with JSON emitted in either case. `-o name` prints only advertised region names, or no rows on exit `1`. Failed catalog reads use the [error envelope](#error-envelope).
+
 ### `azw pick vm <sku> [scope] -o json`
 
 ```json

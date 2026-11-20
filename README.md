@@ -107,6 +107,15 @@ azw check storage --kind StorageV2 --sku Standard_ZRS --region westeurope
 
 The check reads the selected subscription’s Storage SKU catalog and evaluates allowed-location policy when available. It reports whether the requested combination is listed, explicitly restricted, absent from the catalog, or inconclusive. It does not check account quota, zone placement, or live capacity. See the [Storage JSON contract](docs/json-contracts.md#storage-check).
 
+In the v0.5.1 source build, scan a geography for the same configuration:
+
+```bash
+azw availability storage --kind StorageV2 --sku Standard_ZRS --eu
+azw availability storage --kind StorageV2 --sku Standard_ZRS --eu -o name
+```
+
+The table and [JSON output](docs/json-contracts.md#storage-availability) show every evaluated region. Name output prints one advertised region per line.
+
 ## Preflight Terraform or Bicep
 
 ```bash
