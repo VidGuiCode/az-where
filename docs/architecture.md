@@ -37,7 +37,7 @@ flowchart LR
 
 ### Storage SKUs
 
-The [Storage SKU check and scan](../src/core/storage.ts) use the subscription-scoped Storage SKU list. They match the requested account kind and SKU against catalog entries for each region and evaluate explicit location restrictions. The catalog is read live once per invocation and follows ARM pagination. Matching rows without enough location or restriction data can produce an inconclusive result.
+The [Storage SKU check, scan, and comparison](../src/core/storage.ts) use the subscription-scoped Storage SKU list. They match each requested account kind and SKU against catalog entries for each region and evaluate explicit location restrictions. The catalog is read live once per invocation and follows ARM pagination. Matching rows without enough location or restriction data can produce an inconclusive result.
 
 ### Infrastructure files
 

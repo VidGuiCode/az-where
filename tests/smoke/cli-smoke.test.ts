@@ -31,6 +31,23 @@ function runFail(args: string[]) {
 }
 
 describe("CLI smoke tests", () => {
+  it("exposes compare storage with configuration pairs and geographic scope", () => {
+    const output = run(["compare", "storage", "--help"]);
+    expect(output).toContain("kind/SKU");
+    expect(output).toContain("--geography");
+  });
+
+  it.each([
+    { args: ["StorageV2", "-o", "json"], error: "kind/SKU pairs" },
+    { args: ["StorageV2/Standard_LRS", "--region", "westeurope", "--eu"], error: "--region" },
+    { args: ["StorageV2/Standard_LRS", "-o", "name"], error: "not supported" },
+  ])("validates Storage comparisons before querying Azure ($error)", ({ args, error }) => {
+    const res = runFail(["compare", "storage", ...args]);
+    expect(res.status).toBe(3);
+    expect(res.stdout).toBe("");
+    expect(res.stderr).toContain(error);
+  });
+
   it("exposes Storage availability with geography filters and name output", () => {
     const output = run(["availability", "storage", "--help"]);
     for (const flag of ["--kind", "--sku", "--eu", "--geography", "--name"]) {

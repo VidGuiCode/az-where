@@ -2,6 +2,11 @@
 
 [README](README.md) · [GitHub releases](https://github.com/VidGuiCode/az-where/releases)
 
+## 0.5.2
+
+- Add `azw compare storage "StorageV2/Standard_LRS,StorageV2/Standard_ZRS" --eu` to compare Storage configurations across regions with one catalog read.
+- Show advertised, restricted, unlisted, inconclusive, and policy-denied results in the matrix. JSON retains the request order, shared region axis, per-cell evidence, and verdict counts. [Storage comparison contract](docs/json-contracts.md#storage-comparison)
+
 ## 0.5.1
 
 - Add `azw availability storage --kind StorageV2 --sku Standard_ZRS --eu` to scan regions for one Storage configuration, with the same evidence and policy rules as `check storage`.

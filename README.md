@@ -41,7 +41,7 @@ Scanned 2 regions in 1.4s.
 Use **Node.js 20+** and **Azure CLI 2.11.0+**. The GitHub release tarball installs both `azw` and `az-where`.
 
 ```bash
-npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.5.1/az-where-0.5.1.tgz
+npm install -g https://github.com/VidGuiCode/az-where/releases/download/v0.5.2/az-where-0.5.2.tgz
 az login
 azw --version
 azw doctor
@@ -115,6 +115,14 @@ azw availability storage --kind StorageV2 --sku Standard_ZRS --eu -o name
 ```
 
 The table and [JSON output](docs/json-contracts.md#storage-availability) show every evaluated region. Name output prints one advertised region per line.
+
+Compare multiple account kind and SKU pairs on the same region axis:
+
+```bash
+azw compare storage "StorageV2/Standard_LRS,StorageV2/Standard_ZRS" --eu
+```
+
+Use `-o json` to read the verdict and evidence for every cell. [Storage comparison contract](docs/json-contracts.md#storage-comparison)
 
 ## Preflight Terraform or Bicep
 

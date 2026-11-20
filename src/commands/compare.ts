@@ -19,6 +19,7 @@ import {
   sortCompareResourceRowsForTable,
 } from "../core/compareResource.js";
 import { c, colorEnabled } from "../core/color.js";
+import { compareStorageTargets, parseStorageTargets, STORAGE_COMPARE_MARK } from "../core/compareStorage.js";
 import { exitWithError, ValidationError } from "../core/errors.js";
 import { filterByGeography, listLocations, resolveGeography } from "../core/geo.js";
 import { printInfo, printJson, printTable } from "../core/output.js";
@@ -44,7 +45,7 @@ import { loadPolicyCheck, type PolicySummary } from "../core/policy.js";
  */
 export function createCompareCommand(): Command {
   const cmd = new Command("compare").description(
-    "Compare multiple targets across regions (VM sizes and resource types).",
+    "Compare VM sizes, resource types, or Storage configurations across regions.",
   );
 
   const vm = new Command("vm")
@@ -78,9 +79,113 @@ export function createCompareCommand(): Command {
     });
   addOutputOption(addJsonCompatibilityOptions(resource, "Machine-readable JSON output"));
 
+  const storage = new Command("storage")
+    .description("Compare Storage account kind and SKU pairs across regions.")
+    .argument("<targets>", "Comma-separated kind/SKU pairs, e.g. StorageV2/Standard_LRS,StorageV2/Standard_ZRS")
+    .option("--region <name>", "Scope to a single region")
+    .option("--eu", "Shortcut for --geography Europe")
+    .option("--us", "Shortcut for --geography US")
+    .option("--asia", "Shortcut for --geography 'Asia Pacific'")
+    .option("--geography <group>", "Filter by geographyGroup", "all")
+    .option("--no-policy", "Skip Azure Policy allowed-location checks")
+    .option("--refresh", "Bypass cached ARM location data")
+    .action(runCompareStorageAction);
+  addOutputOption(addJsonCompatibilityOptions(storage, "Machine-readable JSON output"));
+
   cmd.addCommand(vm);
   cmd.addCommand(resource);
+  cmd.addCommand(storage);
   return cmd;
+}
+
+async function runCompareStorageAction(
+  positional: string,
+  opts: {
+    region?: string;
+    eu?: boolean;
+    us?: boolean;
+    asia?: boolean;
+    geography?: string;
+    policy?: boolean;
+    refresh?: boolean;
+    json?: boolean;
+    compact?: boolean;
+    output?: string;
+  },
+): Promise<void> {
+  let jsonErrors = Boolean(opts.json);
+  try {
+    const mode = resolveOutputMode(opts, { command: "compare storage" });
+    jsonErrors = isJsonOutput(mode);
+    const targets = parseStorageTargets(positional);
+    if (opts.region !== undefined) {
+      if (!opts.region.trim()) throw new ValidationError("Provide an Azure region name.");
+      validateRegionScope(opts);
+    }
+    const geoInput = opts.eu
+      ? "eu"
+      : opts.us
+        ? "us"
+        : opts.asia
+          ? "asia"
+          : (opts.geography ?? "all");
+    const geography = resolveGeography(geoInput);
+    const started = Date.now();
+    const list = await listLocations({
+      progressLabel: `Comparing ${targets.length} Storage configurations`,
+      refresh: Boolean(opts.refresh),
+    });
+    const locations = opts.region
+      ? matchRegion(list, opts.region)
+      : filterByGeography(list, geography);
+    if (locations.length === 0) {
+      throw new ValidationError(
+        opts.region
+          ? `Unknown region '${opts.region}'. Try: azw geos`
+          : `No regions matched geography '${geoInput}'. Try: azw geos`,
+      );
+    }
+    const axis = [...locations].sort((a, b) => a.name.localeCompare(b.name));
+    const policy = await loadPolicyCheck({ enabled: opts.policy !== false, required: false });
+    const results = await compareStorageTargets(targets, axis, policy.check);
+    if (isJsonOutput(mode)) {
+      printJson({
+        schemaVersion: 1,
+        kind: "compare",
+        resourceKind: "storage",
+        confidence: "availability",
+        targets,
+        regions: axis.map((location) => location.name),
+        geography: opts.region ? null : (geography ?? "all"),
+        region: opts.region ? axis[0].name : null,
+        scannedAt: new Date().toISOString(),
+        elapsedMs: Date.now() - started,
+        cache: armCacheSummary(),
+        policy: policy.summary,
+        results,
+      });
+    } else {
+      printPolicyWarning(policy.summary, mode);
+      const labels = targets.map(({ accountKind, sku }) => `${accountKind}/${sku}`);
+      printTable(
+        axis.map((location, index) => [
+          location.name,
+          ...results.map((result) => STORAGE_COMPARE_MARK[result.regions[index].verdict]),
+        ]),
+        ["REGION", ...labels],
+      );
+      printInfo("A advertised · R restricted · - unlisted · ? inconclusive · P policy denied");
+      for (const [index, result] of results.entries()) {
+        printInfo(`${labels[index]}: ${result.advertisedCount}/${axis.length} regions advertised.`);
+      }
+      printInfo(
+        `Confidence: availability. Allowed-location policy: ${policy.summary.checked ? "checked" : "unchecked"}.`,
+      );
+    }
+    if (!results.some((result) => result.advertisedCount > 0)) process.exitCode = 1;
+  } catch (err) {
+    exitWithError(err, jsonErrors);
+  }
 }
 
 export async function runCompareVmAction(

@@ -166,6 +166,18 @@ Same envelope with `resourceKind: "resource"`, `resolved`, `confidence: "availab
 - `geography` is the selected group, `"all"` without a filter, or `null` for a single region. `region` is the canonical name for a single-region scan and `null` otherwise.
 - The scan exits `0` when at least one region is advertised and `1` otherwise, with JSON emitted in either case. `-o name` prints only advertised region names, or no rows on exit `1`. Failed catalog reads use the [error envelope](#error-envelope).
 
+### Storage comparison
+
+`azw compare storage <kind/SKU,kind/SKU,...> [scope] -o json` adds a versioned `kind: "compare"` payload with `resourceKind: "storage"` and `confidence: "availability"`. It carries the same scope, timing, cache, and policy fields as [Storage availability](#storage-availability).
+
+| Field | Meaning |
+| --- | --- |
+| `targets` | Up to 30 distinct `{ accountKind, sku }` pairs, deduplicated case-insensitively in first-occurrence order. |
+| `regions` | Shared array of canonical ARM region names ordered by region name. |
+| `results` | One result per target in request order. Each contains `accountKind`, `sku`, `regions` with Storage availability rows in axis order, `advertisedRegions`, `advertisedCount`, and `verdictCounts` keyed by the five Storage verdicts. |
+
+Exit `0` means at least one configuration is advertised in at least one region. Exit `1` means no cell was advertised, and JSON still contains the matrix. Failed reads use the [error envelope](#error-envelope). Use `json` or `compact` for machine output.
+
 ### `azw pick vm <sku> [scope] -o json`
 
 ```json

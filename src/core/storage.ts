@@ -46,7 +46,12 @@ export interface StorageSkuResult {
   reason: string;
 }
 
-export function validateStorageTarget(kind: string, sku: string) {
+export interface StorageTarget {
+  accountKind: string;
+  sku: string;
+}
+
+export function validateStorageTarget(kind: string, sku: string): StorageTarget {
   const accountKind = kind.trim();
   const skuName = sku.trim();
   if (!/^[a-z][a-z0-9]*$/i.test(accountKind)) {
@@ -59,17 +64,29 @@ export function validateStorageTarget(kind: string, sku: string) {
 }
 
 export async function scanStorageAvailability(
-  target: { accountKind: string; sku: string },
+  target: StorageTarget,
+  locations: AzLocation[],
+  policy?: PolicyCheck,
+) {
+  const [result] = await scanStorageTargets([target], locations, policy);
+  return result.regions;
+}
+
+export async function scanStorageTargets(
+  targets: StorageTarget[],
   locations: AzLocation[],
   policy?: PolicyCheck,
 ) {
   const hasAllowedRegion = locations.some((location) => policy?.isAllowed(location.name) !== false);
   const catalog = hasAllowedRegion ? await listStorageSkus() : [];
-  return locations.map((location) => ({
-    region: location.name,
-    displayName: location.displayName,
-    geographyGroup: location.metadata?.geographyGroup ?? null,
-    ...classifyStorageSku(catalog, target.accountKind, target.sku, location, policy),
+  return targets.map((target) => ({
+    ...target,
+    regions: locations.map((location) => ({
+      region: location.name,
+      displayName: location.displayName,
+      geographyGroup: location.metadata?.geographyGroup ?? null,
+      ...classifyStorageSku(catalog, target.accountKind, target.sku, location, policy),
+    })),
   }));
 }
 
