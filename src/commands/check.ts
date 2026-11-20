@@ -23,6 +23,7 @@ import { loadPolicyCheck } from "../core/policy.js";
 import { scanResourceAvailability } from "../core/resources.js";
 import { scanRegions } from "../core/scan.js";
 import { normalizeSku } from "../core/sku.js";
+import { classifyStorageSku, listStorageSkus } from "../core/storage.js";
 import type { ResourceAvailabilityVerdict } from "../core/types.js";
 
 export function createCheckCommand(): Command {
@@ -50,8 +51,19 @@ export function createCheckCommand(): Command {
     });
   addOutputOption(addJsonCompatibilityOptions(resource, "Machine-readable JSON output"));
 
+  const storage = new Command("storage")
+    .description("Check a Storage account kind and SKU in one region.")
+    .requiredOption("--kind <kind>", "Storage account kind (e.g. StorageV2)")
+    .requiredOption("--sku <sku>", "Storage SKU (e.g. Standard_ZRS)")
+    .requiredOption("--region <name>", "Azure region name")
+    .option("--no-policy", "Skip Azure Policy allowed-location checks")
+    .option("--refresh", "Bypass cached ARM location data")
+    .action(runStorageCheckAction);
+  addOutputOption(addJsonCompatibilityOptions(storage, "Machine-readable JSON output"));
+
   cmd.addCommand(vm);
   cmd.addCommand(resource);
+  cmd.addCommand(storage);
   return cmd;
 }
 
@@ -177,6 +189,82 @@ async function runResourceCheckAction(
       console.log(line);
     }
     if (!ok) process.exit(1);
+  } catch (err) {
+    exitWithError(err, jsonErrors);
+  }
+}
+
+async function runStorageCheckAction(opts: {
+  kind: string;
+  sku: string;
+  region: string;
+  policy?: boolean;
+  refresh?: boolean;
+  json?: boolean;
+  compact?: boolean;
+  output?: string;
+}): Promise<void> {
+  let jsonErrors = Boolean(opts.json);
+  try {
+    const mode = resolveOutputMode(opts, { allowValue: true, command: "check storage" });
+    jsonErrors = isJsonOutput(mode);
+    const accountKind = opts.kind.trim();
+    const sku = opts.sku.trim();
+    if (!/^[a-z][a-z0-9]*$/i.test(accountKind)) {
+      throw new ValidationError("Use a Storage account kind such as StorageV2.");
+    }
+    if (!/^[a-z][a-z0-9]*(_[a-z0-9]+)+$/i.test(sku)) {
+      throw new ValidationError("Use a full Storage SKU name such as Standard_ZRS.");
+    }
+    if (!opts.region.trim()) throw new ValidationError("Provide an Azure region name.");
+    const [location] = matchRegion(
+      await listLocations({
+        progressLabel: `Checking ${sku} in ${opts.region}`,
+        refresh: Boolean(opts.refresh),
+      }),
+      opts.region,
+    );
+    if (!location) throw new ValidationError(`Unknown region '${opts.region}'.`);
+
+    const policy = await loadPolicyCheck({ enabled: opts.policy !== false, required: false });
+    const policyDenied = policy.check?.isAllowed(location.name) === false;
+    const catalog = policyDenied ? [] : await listStorageSkus();
+    const { verdict, listed, restrictionReasons, reason } = classifyStorageSku(
+      catalog,
+      accountKind,
+      sku,
+      location,
+      policy.check,
+    );
+    if (mode === "value") {
+      console.log(verdict);
+    } else if (isJsonOutput(mode)) {
+      printJson({
+        schemaVersion: 1,
+        kind: "check",
+        resourceKind: "storage",
+        accountKind,
+        sku,
+        region: location.name,
+        verdict,
+        confidence: "availability",
+        cache: armCacheSummary(),
+        policy: policy.summary,
+        evidence: { listed, restrictionReasons },
+        explanation: { code: verdict, reason, hint: null },
+      });
+    } else {
+      printTable(
+        [[location.name, accountKind, sku, verdict]],
+        ["REGION", "ACCOUNT KIND", "SKU", "VERDICT"],
+      );
+      console.log(`Reason: ${reason}`);
+      console.log("Confidence: availability. Account quota and live capacity were not checked.");
+      if (!policy.summary.checked) {
+        console.log(`Policy: unchecked${policy.summary.error ? ` (${policy.summary.error})` : ""}.`);
+      }
+    }
+    if (verdict !== "STORAGE_SKU_ADVERTISED") process.exitCode = 1;
   } catch (err) {
     exitWithError(err, jsonErrors);
   }

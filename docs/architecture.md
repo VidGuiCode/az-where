@@ -35,6 +35,10 @@ flowchart LR
 
 [Resource comparison](../src/core/compareResource.ts) classifies all requested types from a single catalog load. `pick resource` returns the first region advertising all requested types in geography-group and region-name order. `suggest resource` uses the same candidates and can rank them by proximity using the [built-in coordinates](../src/core/suggest.ts).
 
+### Storage SKUs
+
+The [Storage SKU check](../src/core/storage.ts) uses the subscription-scoped Storage SKU list. It matches the requested account kind and SKU against catalog entries for the region and evaluates explicit location restrictions. The catalog is read live and follows ARM pagination. Matching rows without enough location or restriction data can produce an inconclusive result.
+
 ### Infrastructure files
 
 [The IaC parser](../src/core/iac.ts) extracts literal VM and scale-set location/size pairs and literal locations for mapped generic resource types in Terraform and Bicep. It reports dynamic locations or VM sizes as skipped. It reads the supplied files directly, without evaluating variables or following modules.

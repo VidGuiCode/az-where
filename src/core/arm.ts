@@ -47,6 +47,8 @@ export interface ArmListOptions {
   refresh?: boolean;
   /** Disable cache reads/writes for this call. Defaults to true for safe endpoints. */
   cache?: boolean;
+  /** Reject incomplete list pages when an absent entry is used as evidence. */
+  requireValueArray?: boolean;
 }
 
 export async function armList<T>(path: string, opts: ArmListOptions = {}): Promise<T[]> {
@@ -64,6 +66,13 @@ export async function armList<T>(path: string, opts: ArmListOptions = {}): Promi
   while (url) {
     const res = await fetchWithRetry(url, tok.accessToken, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     const data = (await res.json()) as { value?: T[]; nextLink?: string };
+    if (
+      opts.requireValueArray &&
+      (!Array.isArray(data?.value) ||
+        (data.nextLink != null && typeof data.nextLink !== "string"))
+    ) {
+      throw new Error("Azure returned an invalid list response.");
+    }
     if (data.value) out.push(...data.value);
     url = data.nextLink ?? "";
   }

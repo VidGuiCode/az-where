@@ -18,7 +18,9 @@ azw <verb> <kind> <target> [scope] [output options]
 | `pick` | Return a region name for automation | `azw pick resource storage-account,key-vault --eu -o value` |
 | `suggest` | Recommend a region and explain the choice | `azw suggest vm B1s --eu --near Luxembourg` |
 
-Use `vm` for VM SKU checks and `resource` for provider-catalog checks. Use existing verbs for new intents when they fit. A new resource kind warrants distinct service-specific evidence. Keep generic catalog checks under `resource`.
+Use `vm` for VM SKU checks, `resource` for provider-catalog checks, and `storage` for Storage SKU evidence. Use existing verbs for new intents when they fit. A new resource kind warrants distinct service-specific evidence. Keep generic catalog checks under `resource`.
+
+`check storage` takes named inputs for account kind, Storage SKU, and region. It evaluates a subscription SKU catalog at availability confidence. [Storage JSON contract](json-contracts.md#storage-check)
 
 `compare` takes a comma-separated list of VM SKUs or resource targets. Resource `pick` and `suggest` also accept a comma-separated list and require every target to be advertised in the chosen region. A single resource target works with either command.
 
@@ -91,5 +93,6 @@ Keep stdout parseable and send progress and errors to stderr. Suppress progress 
 | --- | --- | --- |
 | VM | `deployability` | `AVAILABLE`, `FULL`, `SKU_NOT_OFFERED`, `BLOCKED_FOR_SUB`, `POLICY_DENIED`, `QUOTA_UNKNOWN` |
 | Generic resource | `availability` | `RESOURCE_SUPPORTED`, `RESOURCE_NOT_SUPPORTED`, `POLICY_DENIED` |
+| Storage SKU | `availability` | `STORAGE_SKU_ADVERTISED`, `STORAGE_SKU_RESTRICTED`, `STORAGE_SKU_NOT_LISTED`, `STORAGE_SKU_UNKNOWN`, `POLICY_DENIED` |
 
 Use observed facts in explanations and provide a hint when there is a concrete next step. VM checks combine known SKU, subscription, policy, and VM-family quota signals. Generic resource results describe locations advertised for a type. The [verdict vocabulary](json-contracts.md#verdict-vocabulary) defines each code.

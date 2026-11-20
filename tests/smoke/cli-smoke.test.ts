@@ -31,6 +31,27 @@ function runFail(args: string[]) {
 }
 
 describe("CLI smoke tests", () => {
+  it("exposes the Storage check with explicit kind, SKU, and region options", () => {
+    const output = run(["check", "storage", "--help"]);
+    expect(output).toContain("--kind <kind>");
+    expect(output).toContain("--sku <sku>");
+    expect(output).toContain("--region <name>");
+  });
+
+  it("rejects an invalid Storage SKU before querying Azure", () => {
+    const res = runFail([
+      "check", "storage", "--kind", "StorageV2", "--sku", "ZRS", "--region", "westeurope",
+      "-o", "json",
+    ]);
+    expect(res.status).toBe(3);
+    expect(res.stdout).toBe("");
+    expect(JSON.parse(res.stderr)).toMatchObject({
+      status: "error",
+      code: "ValidationError",
+      message: expect.stringContaining("Standard_ZRS"),
+    });
+  });
+
   it("shows version", () => {
     const output = run(["--version"]);
     expect(output.trim()).toBe(PKG_VERSION);

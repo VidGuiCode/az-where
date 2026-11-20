@@ -43,7 +43,7 @@ Parse these exact verdict strings.
 |---|---|---|---|
 | `schemaVersion` | `1` | all | |
 | `kind` | string | all | The verb: `availability`, `check`, `pick`, `suggest`, `compare`, `verify` |
-| `resourceKind` | string | all | `vm` or `resource` |
+| `resourceKind` | string | all | `vm`, `resource`, or `storage` |
 | `cache` | object | all | `{ used, refreshed, ttlSeconds }` |
 | `policy` | object | all | `{ checked, restricted, allowedLocations, assignments: [{name, displayName}], error }`; `allowedLocations`/`assignments` are `null`/`[]` when unrestricted |
 | `explanation` | object | check payloads | `{ code, reason, hint }` **(since 0.4.6)**; `hint` may be `null` |
@@ -143,6 +143,20 @@ Same envelope with `resourceKind: "resource"`, plus `target`, `resolved` (`{ inp
 ### `azw check resource <target> --region <name> -o json`
 
 Same envelope with `resourceKind: "resource"`, `resolved`, `confidence: "availability"`, `checks` as one resource row, and `explanation`. `RESOURCE_SUPPORTED` explanations always state that the result is availability, not deployability. Exit `1` when `verdict` is not `RESOURCE_SUPPORTED`.
+
+### Storage check
+
+`azw check storage --kind <kind> --sku <sku> --region <name> -o json` adds a `kind: "check"` payload with `resourceKind: "storage"` and `confidence: "availability"`. It includes the requested `accountKind`, `sku`, resolved `region`, `verdict`, shared `cache` and `policy` fields, and `explanation: { code, reason, hint }`. The `evidence` object contains `listed` (boolean, or `null` when location evidence is incomplete or a policy denial skipped the lookup) and `restrictionReasons` (an array of matching Azure reason codes).
+
+| Verdict | Meaning |
+| --- | --- |
+| `STORAGE_SKU_ADVERTISED` | The catalog lists the combination in the region without an applicable explicit restriction. |
+| `STORAGE_SKU_RESTRICTED` | A location restriction explicitly names this region, including when a catalog row also advertises it. |
+| `STORAGE_SKU_NOT_LISTED` | The catalog did not list the combination in the region. |
+| `STORAGE_SKU_UNKNOWN` | A matching SKU entry omits location evidence, or a location restriction omits its affected regions. |
+| `POLICY_DENIED` | An evaluated allowed-location policy excludes the region. The SKU catalog is skipped. |
+
+`-o value` prints the verdict. Exit `0` means advertised. Other verdicts write a result and exit `1`. A failed request or an unusable catalog uses the [error envelope](#error-envelope) on stderr. Use `policy.checked` and `policy.error` to identify skipped or failed policy reads. The Storage SKU catalog is read live. `--refresh` refreshes the ARM locations list.
 
 ### `azw pick vm <sku> [scope] -o json`
 

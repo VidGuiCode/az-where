@@ -99,6 +99,16 @@ Retail prices estimate on-demand VM compute. The estimate excludes disks, bandwi
 
 Run `azw <command> --help` for supported flags, or `azw availability vm --help` for an individual subcommand.
 
+### Check a Storage SKU
+
+Available in the v0.5.0 source build.
+
+```bash
+azw check storage --kind StorageV2 --sku Standard_ZRS --region westeurope
+```
+
+The check reads the selected subscription’s Storage SKU catalog and evaluates allowed-location policy when available. It reports whether the requested combination is listed, explicitly restricted, absent from the catalog, or inconclusive. It does not check account quota, zone placement, or live capacity. See the [Storage JSON contract](docs/json-contracts.md#storage-check).
+
 ## Preflight Terraform or Bicep
 
 ```bash

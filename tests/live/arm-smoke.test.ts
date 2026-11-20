@@ -45,6 +45,32 @@ function runJson(args: string[]) {
 }
 
 describe.runIf(LIVE)("live ARM resource availability", () => {
+  it("checks a Storage account SKU and writes a versioned availability result", () => {
+    const res = runJson([
+      "check", "storage", "--kind", "StorageV2", "--sku", "Standard_ZRS",
+      "--region", "westeurope", "--no-policy", "-o", "json",
+    ]);
+    const payload = JSON.parse(res.stdout);
+    expect(payload).toMatchObject({
+      schemaVersion: 1,
+      kind: "check",
+      resourceKind: "storage",
+      accountKind: "StorageV2",
+      sku: "Standard_ZRS",
+      region: "westeurope",
+      confidence: "availability",
+      policy: { checked: false },
+      evidence: { restrictionReasons: expect.any(Array) },
+      explanation: { code: payload.verdict, reason: expect.any(String), hint: null },
+    });
+    expect([true, false, null]).toContain(payload.evidence.listed);
+    expect([
+      "STORAGE_SKU_ADVERTISED", "STORAGE_SKU_RESTRICTED", "STORAGE_SKU_NOT_LISTED",
+      "STORAGE_SKU_UNKNOWN",
+    ]).toContain(payload.verdict);
+    expect(res.status).toBe(payload.verdict === "STORAGE_SKU_ADVERTISED" ? 0 : 1);
+  }, 35_000);
+
   it("availability resource storage-account --eu -o json returns the documented shape", () => {
     const res = runJson(["availability", "resource", "storage-account", "--eu", "-o", "json"]);
     // Exit 0 (some region supports it) or 1 (none) are both valid outcomes;
